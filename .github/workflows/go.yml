@@ -70,6 +70,9 @@ jobs:
     name: Build Docker Image
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
     - name: Prepare
       id: prep
       run: |
