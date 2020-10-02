@@ -1,0 +1,111 @@
+name: Go
+
+on:
+  release:
+    types: [ "published" ]
+
+jobs:
+  build-packages:
+    name: Build Release Packages
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^1.13
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Build
+      run: |
+        go mod init crucible_provider
+        cd cmd
+        GOOS=linux GOARCH=386 go build -o ../terraform-provider-crucible_${{ github.event.release.tag_name }}_linux_386
+        GOOS=linux GOARCH=amd64 go build -o ../terraform-provider-crucible_${{ github.event.release.tag_name }}_linux_amd64
+        GOOS=darwin GOARCH=amd64 go build -o ../terraform-provider-crucible_${{ github.event.release.tag_name }}_darwin_amd64
+        GOOS=windows GOARCH=386 go build -o ../terraform-provider-crucible_${{ github.event.release.tag_name }}_windows_386.exe
+        GOOS=windows GOARCH=amd64 go build -o ../terraform-provider-crucible_${{ github.event.release.tag_name }}_windows_amd64.exe
+        
+    - name: Upload to release
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: terraform-provider-crucible_${{ github.event.release.tag_name }}_linux_386 application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload to release
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: terraform-provider-crucible_${{ github.event.release.tag_name }}_linux_amd64 application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload to release
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: terraform-provider-crucible_${{ github.event.release.tag_name }}_darwin_amd64 application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload to release
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: terraform-provider-crucible_${{ github.event.release.tag_name }}_windows_386.exe application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload to release
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: terraform-provider-crucible_${{ github.event.release.tag_name }}_windows_amd64.exe application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+        
+ 
+  build-docker-image:    
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Prepare
+      id: prep
+      run: |
+        DOCKER_IMAGE=cmusei/terraform-crucible-provider
+        VERSION=${{ github.event.release.tag_name }}
+        TAGS="${DOCKER_IMAGE}:${VERSION}"
+        if [ "${{ github.event_name }}" = "push" ]; then
+          TAGS="$TAGS,${DOCKER_IMAGE}:sha-${GITHUB_SHA::8}"
+        fi
+        echo ::set-output name=version::${VERSION}
+        echo ::set-output name=tags::${TAGS}
+        echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Login to DockerHub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v1 
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        file: ./Dockerfile
+        build-args: |
+          VERSION=${{ github.event.release.tag_name }}
+        push: ${{ startsWith(github.ref, 'refs/tags/') }}
+        tags: ${{ steps.prep.outputs.tags }}
+        labels: |
+          org.opencontainers.image.source=${{ github.event.repository.clone_url }}
+          org.opencontainers.image.created=${{ steps.prep.outputs.created }}
+          org.opencontainers.image.revision=${{ github.sha }}
