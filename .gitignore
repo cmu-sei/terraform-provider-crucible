@@ -1,0 +1,15 @@
+.terraform
+go.sum
+go.mod
+terraform-provider-crucible.exe
+terraform-provider-crucible
+terraform.tfstate
+terraform.tfstate.backup
+crash.log
+api_test.go
+*.py
+*.txt
+.vscode
+out.log
+*.http
+.terraform*

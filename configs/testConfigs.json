@@ -1,0 +1,516 @@
+{
+    "configVMNormal":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "test",
+        "vm_id": "6a7ec409-d275-4b31-94d3-a51cb61d2519",
+        "url": "http://example.com",
+        "name": "foo",
+        "user_id": "8694c78c-1c49-421b-8ed8-689b46834878",
+        "team_ids": ["c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configVMFirst":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "first",
+        "vm_id": "1d0b5b53-e034-492d-95c6-714379a4f51e",
+        "url": "http://example.com",
+        "name": "first",
+        "user_id": "8694c78c-1c49-421b-8ed8-689b46834878",
+        "team_ids": ["c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configVMSecond":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "second",
+        "vm_id": "3faebb23-d896-410b-9fcb-a17d9d37427d",
+        "url": "http://example.com",
+        "name": "second",
+        "user_id": "8694c78c-1c49-421b-8ed8-689b46834878",
+        "team_ids": ["c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configVMIncorrectUserID":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "configVMIncorrectUserID",
+        "vm_id": "33605140-f28f-4722-b161-8540e97e6bab",
+        "url": "http://example.com",
+        "name": "foo",
+        "user_id": "_",
+        "team_ids": ["c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configVMNormalUpdated":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "test",
+        "vm_id": "6a7ec409-d275-4b31-94d3-a51cb61d2519",
+        "url": "http://example.com",
+        "name": "bar",
+        "user_id": "8694c78c-1c49-421b-8ed8-689b46834878",
+        "team_ids": ["c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configVMFirstUpdated":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "first",
+        "vm_id": "1d0b5b53-e034-492d-95c6-714379a4f51e",
+        "url": "http://example.com",
+        "name": "firstUpdated",
+        "user_id": "8694c78c-1c49-421b-8ed8-689b46834878",
+        "team_ids": ["c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configVMSecondUpdated":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "second",
+        "vm_id": "3faebb23-d896-410b-9fcb-a17d9d37427d",
+        "url": "http://example.com",
+        "name": "secondUpdated",
+        "user_id": "8694c78c-1c49-421b-8ed8-689b46834878",
+        "team_ids": ["c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configVMMultiTeams":
+    {
+        "provider_name": "crucible_player_virtual_machine",
+        "resourceName": "test",
+        "vm_id": "6a7ec409-d275-4b31-94d3-a51cb61d2519",
+        "url": "http://example.com",
+        "name": "foo",
+        "user_id": "8694c78c-1c49-421b-8ed8-689b46834878",
+        "team_ids": ["8efdcbd3-daa5-4cb4-b62b-338fe7bf3351", "c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"]
+    },
+    "configViewEmpty":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "empty",
+        "name": "test",
+        "description": "test empty view",
+        "status": "Active"
+    },
+    "configViewEmptyUpdated":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "empty",
+        "name": "test",
+        "description": "test empty view updated",
+        "status": "Active"
+    },
+    "configViewApps":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "apps",
+        "name": "test",
+        "description": "test view with apps",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testApp",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ]
+    },
+    "configViewAppsUpdated":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "apps",
+        "name": "test",
+        "description": "test view with apps",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testAppUpdated",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2Updated",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ]
+    },
+    "configViewTeams":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "teams",
+        "name": "test",
+        "description": "test view with teams",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testApp",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ],
+        "teams":
+        [
+            {
+                "name": "bar",
+                "role_id": "2115e7f6-a1f6-4ebf-8c1f-5284b0504138",
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"]
+            },
+            {
+                "name": "foo",
+                "role_id": null,
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"]
+            }
+        ]
+    },
+    "configViewTeamsUpdated":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "teams",
+        "name": "test",
+        "description": "test view with teams",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testApp",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ],
+        "teams":
+        [
+            {
+                "name": "barUpdated",
+                "role_id": "2115e7f6-a1f6-4ebf-8c1f-5284b0504138",
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"]
+            },
+            {
+                "name": "fooUpdated",
+                "role_id": null,
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"]
+            }
+        ]
+    },
+    "configViewUsers":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "users",
+        "name": "test",
+        "description": "test view with users",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testApp",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ],
+        "teams":
+        [
+            {
+                "name": "bar",
+                "role_id": "2115e7f6-a1f6-4ebf-8c1f-5284b0504138",
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"],
+                "users":
+                [
+                    {
+                        "user_id": "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
+                        "role_id": "ebf35fab-eaa6-435b-aa0c-566056a56fba"
+                    },
+                    {
+                        "user_id": "ad580e55-f5b3-4865-b3ed-acec087450a7"
+                    }
+                ]
+            },
+            {
+                "name": "foo",
+                "role_id": null,
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"],
+                "users":
+                [
+                    {
+                        "user_id": "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
+                        "role_id": "ebf35fab-eaa6-435b-aa0c-566056a56fba"
+                    }
+                ]
+            }
+        ]
+    },
+    "configViewUsersUpdated":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "users",
+        "name": "test",
+        "description": "test view with users",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testApp",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ],
+        "teams":
+        [
+            {
+                "name": "bar",
+                "role_id": "2115e7f6-a1f6-4ebf-8c1f-5284b0504138",
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"],
+                "users":
+                [
+                    {
+                        "user_id": "ad580e55-f5b3-4865-b3ed-acec087450a7"
+                    }
+                ]
+            },
+            {
+                "name": "foo",
+                "role_id": null,
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"],
+                "users":
+                [
+                    {
+                        "user_id": "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
+                        "role_id": "ebf35fab-eaa6-435b-aa0c-566056a56fba"
+                    }
+                ]
+            }
+        ]
+    },
+    "configViewInstances":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "instances",
+        "name": "test",
+        "description": "test view with instances",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testApp",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ],
+        "teams":
+        [
+            {
+                "name": "bar",
+                "role_id": "2115e7f6-a1f6-4ebf-8c1f-5284b0504138",
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"],
+                "users":
+                [
+                    {
+                        "user_id": "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
+                        "role_id": "ebf35fab-eaa6-435b-aa0c-566056a56fba"
+                    },
+                    {
+                        "user_id": "ad580e55-f5b3-4865-b3ed-acec087450a7"
+                    }
+                ],
+                "app_instances":
+                [
+                    {
+                        "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                        "display_order": 1
+                    },
+                    {
+                        "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                        "display_order": 0
+                    }
+                ]
+
+            },
+            {
+                "name": "foo",
+                "role_id": null,
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"],
+                "users":
+                [
+                    {
+                        "user_id": "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
+                        "role_id": "ebf35fab-eaa6-435b-aa0c-566056a56fba"
+                    }
+                ]
+            }
+        ]
+    },
+    "configViewInstancesUpdated":
+    {
+        "provider_name": "crucible_player_view",
+        "resourceName": "instances",
+        "name": "test",
+        "description": "test view with instances",
+        "status": "Active",
+        "applications": 
+        [
+            {
+                "app_id": "431ef49d-1513-4a8a-b4e5-0f9947ec4f11",
+                "name": "testApp",
+                "url" : null,
+                "icon": null,
+                "embeddable": "true",
+                "load_in_background": "true",
+                "app_template_id": null
+            },
+            {
+                "app_id": "bdd28ef5-4a9e-4fc8-809e-9f117845e158",
+                "name": "testApp2",
+                "url": null,
+                "icon": null,
+                "embeddable": "false",
+                "load_in_background": "false",
+                "app_template_id": null
+            }
+        ],
+        "teams":
+        [
+            {
+                "name": "bar",
+                "role_id": "2115e7f6-a1f6-4ebf-8c1f-5284b0504138",
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"],
+                "users":
+                [
+                    {
+                        "user_id": "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
+                        "role_id": "ebf35fab-eaa6-435b-aa0c-566056a56fba"
+                    },
+                    {
+                        "user_id": "ad580e55-f5b3-4865-b3ed-acec087450a7"
+                    }
+                ],
+                "app_instances":
+                [
+                    {
+                        "app_id": "testApp",
+                        "display_order": 0
+                    },
+                    {
+                        "app_id": "testApp2",
+                        "display_order": 1
+                    }
+                ]
+
+            },
+            {
+                "name": "foo",
+                "role_id": null,
+                "permissions": ["19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"],
+                "users":
+                [
+                    {
+                        "user_id": "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
+                        "role_id": "ebf35fab-eaa6-435b-aa0c-566056a56fba"
+                    }
+                ]
+            }
+        ]
+    },
+    "configAppTemplate":
+    {
+        "provider_name": "crucible_player_application_template",
+        "resourceName": "test",
+        "name": "TestTemplate",
+        "url": "http://example.com",
+        "icon": "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
+        "embeddable": false,
+        "load_in_background": false
+    },
+    "configAppTemplateUpdated":
+    {
+        "provider_name": "crucible_player_application_template",
+        "resourceName": "test",
+        "name": "TestTemplateUpdated",
+        "url": "http://example.com",
+        "icon": "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
+        "embeddable": false,
+        "load_in_background": false
+    }
+}
