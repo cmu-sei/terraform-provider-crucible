@@ -26,7 +26,6 @@ jobs:
         VERSION=beta1
         GOOS=linux GOARCH=386 go build -o ../terraform-provider-crucible_${VERSION}_linux_386
         GOOS=linux GOARCH=amd64 go build -o ../terraform-provider-crucible_${VERSION}_linux_amd64
-        GOOS=darwin GOARCH=386 go build -o ../terraform-provider-crucible_${VERSION}_darwin_386
         GOOS=darwin GOARCH=amd64 go build -o ../terraform-provider-crucible_${VERSION}_darwin_amd64
         GOOS=windows GOARCH=386 go build -o ../terraform-provider-crucible_${VERSION}_windows_386.exe
         GOOS=windows GOARCH=amd64 go build -o ../terraform-provider-crucible_${VERSION}_windows_amd64.exe
