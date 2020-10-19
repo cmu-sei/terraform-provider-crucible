@@ -151,7 +151,7 @@ User properties<ul>
 <li> role: A role to give this user. Optional.
 <li> is_system_admin: Whether this user is a system admin. Computer.
 <ul>
-	
+
 ## Reporting bugs and requesting features
 
 Think you found a bug? Please report all Crucible bugs - including bugs for the individual Crucible apps - in the [cmu-sei/crucible issue tracker](https://github.com/cmu-sei/crucible/issues). 
