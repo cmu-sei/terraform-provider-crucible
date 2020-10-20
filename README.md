@@ -1,6 +1,6 @@
 # Crucible Terraform Provider
 
-[Terraform](https://www.terraform.io/) is an Infrastructure as Code tool for managing cloud-based infrastructure. A provider is a plugin to Terraform that allows for the management of a given resource type. That is, a provider supplies the logic needed to manage infrastructure. There are four main resource types managed by this provider: virtual machines, views, application templates, and identity accounts. They are detailed below.
+[Terraform](https://www.terraform.io/) is an Infrastructure as Code tool for managing cloud-based infrastructure. A provider is a plugin to Terraform that allows for the management of a given resource type. That is, a provider supplies the logic needed to manage infrastructure. There are three main resource types managed by this provider: virtual machines, views, and application templates. They are detailed below.
 
 In order to use the provider, several environment variables must be set:
 ``` 
@@ -8,12 +8,10 @@ TF_USERNAME=<your username>
 TF_PASSWORD=<your password>
 TF_AUTH_URL=<the url to the authentication service>
 TF_PLAYER_TOK_URL=<the url where you get your player authentication token>
-TF_ID_TOK_URL=<the url where you ger your identity authentication token>
 TF_CLIENT_ID=<your client ID for authentication>
 TF_CLIENT_SECRET=<your client secret for authentication>
 TF_VM_API_URL=<the url to the VM API>
 TF_PLAYER_API_URL=<the url to the Player API>
-TF_ID_API_URL=<the url to the Identity API>
 ``` 
 
 ## Virtual Machines
