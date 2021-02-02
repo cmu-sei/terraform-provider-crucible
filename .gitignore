@@ -13,3 +13,4 @@ api_test.go
 out.log
 *.http
 .terraform*
+main.tf
