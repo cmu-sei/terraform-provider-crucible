@@ -4,14 +4,14 @@
 
 In order to use the provider, several environment variables must be set:
 ``` 
-TF_USERNAME=<your username>
-TF_PASSWORD=<your password>
-TF_AUTH_URL=<the url to the authentication service>
-TF_PLAYER_TOK_URL=<the url where you get your player authentication token>
-TF_CLIENT_ID=<your client ID for authentication>
-TF_CLIENT_SECRET=<your client secret for authentication>
-TF_VM_API_URL=<the url to the VM API>
-TF_PLAYER_API_URL=<the url to the Player API>
+SEI_CRUCIBLE_USERNAME=<your username>
+SEI_CRUCIBLE_PASSWORD=<your password>
+SEI_CRUCIBLE_AUTH_URL=<the url to the authentication service>
+SEI_CRUCIBLE_TOK_URL=<the url where you get your player authentication token>
+SEI_CRUCIBLE_CLIENT_ID=<your client ID for authentication>
+SEI_CRUCIBLE_CLIENT_SECRET=<your client secret for authentication>
+SEI_CRUCIBLE_VM_API_URL=<the url to the VM API>
+SEI_CRUCIBLE_PLAYER_API_URL=<the url to the Player API>
 ``` 
 
 ## Virtual Machines

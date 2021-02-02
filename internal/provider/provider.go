@@ -23,56 +23,56 @@ func Provider() *schema.Provider {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_USERNAME"), nil
+					return os.Getenv("SEI_CRUCIBLE_USERNAME"), nil
 				},
 			},
 			"password": {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_PASSWORD"), nil
+					return os.Getenv("SEI_CRUCIBLE_PASSWORD"), nil
 				},
 			},
 			"auth_url": {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_AUTH_URL"), nil
+					return os.Getenv("SEI_CRUCIBLE_AUTH_URL"), nil
 				},
 			},
 			"token_url": {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_PLAYER_TOK_URL"), nil
+					return os.Getenv("SEI_CRUCIBLE_TOK_URL"), nil
 				},
 			},
 			"vm_api_url": {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_VM_API_URL"), nil
+					return os.Getenv("SEI_CRUCIBLE_VM_API_URL"), nil
 				},
 			},
 			"player_api_url": {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_PLAYER_API_URL"), nil
+					return os.Getenv("SEI_CRUCIBLE_PLAYER_API_URL"), nil
 				},
 			},
 			"client_id": {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_PLAYER_CLIENT_ID"), nil
+					return os.Getenv("SEI_CRUCIBLE_CLIENT_ID"), nil
 				},
 			},
 			"client_secret": {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("TF_CLIENT_SECRET"), nil
+					return os.Getenv("SEI_CRUCIBLE_CLIENT_SECRET"), nil
 				},
 			},
 		},
@@ -108,4 +108,3 @@ func config(r *schema.ResourceData) (interface{}, error) {
 	m["client_secret"] = sec.(string)
 	return m, nil
 }
-
