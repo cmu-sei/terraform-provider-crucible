@@ -1,4 +1,4 @@
-# Crucible Terraform Provider Readme
+# Terraform Provider Crucible Readme
 
 [Terraform](https://www.terraform.io/) is an Infrastructure as Code tool for managing cloud-based infrastructure. A provider is a plugin to Terraform that allows for the management of a given resource type. That is, a provider supplies the logic needed to manage infrastructure. There are three main resource types managed by this provider: virtual machines, views, and application templates. They are detailed below.
 
