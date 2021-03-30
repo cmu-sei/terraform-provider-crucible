@@ -29,11 +29,10 @@ func playerVirtualMachine() *schema.Resource {
 			"vm_id": {
 				Type:     schema.TypeString,
 				Optional: true,
-				// This makes it so, if no id is included, terraform will not try to update this field
+				ForceNew: true,
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 					return new == ""
 				},
-				ForceNew: true,
 			},
 			"url": {
 				Type:     schema.TypeString,
@@ -41,7 +40,7 @@ func playerVirtualMachine() *schema.Resource {
 				// The API adds extra information on to the end of the url, so consider the url unchanged if it starts
 				// with the url in the configuration
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return strings.HasPrefix(old, new) && new != ""
+					return strings.HasPrefix(old, new) || (strings.HasSuffix(old, "/vm/"+d.Id()+"/console") && new == "")
 				},
 			},
 			"name": {
@@ -137,8 +136,8 @@ func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	var vmID string
-	if d.Get("vm_id") == "" {
-		vmID = uuid.New().String()
+	if d.Get("vm_id").(string) == "" {
+		vmID = uuid.NewString()
 	} else {
 		vmID = d.Get("vm_id").(string)
 	}
