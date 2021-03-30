@@ -50,7 +50,7 @@ func applicationTemplate() *schema.Resource {
 // call read
 func applicationTemplateCreate(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	template := &structs.AppTemplate{
@@ -191,7 +191,7 @@ func applicationTemplateUpdate(d *schema.ResourceData, m interface{}) error {
 // Call API to delete it
 func applicationTemplateDelete(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	id := d.Id()
@@ -208,4 +208,3 @@ func applicationTemplateDelete(d *schema.ResourceData, m interface{}) error {
 
 	return api.DeleteAppTemplate(id, casted)
 }
-

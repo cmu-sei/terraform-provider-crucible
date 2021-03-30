@@ -110,7 +110,7 @@ call read to ensure everything worked properly
 func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 	log.Printf("! In create function")
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	// We have to convert []interface{} to []string manually
@@ -189,7 +189,7 @@ if err != nil {
 func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
 	log.Printf("! In read function")
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	id := d.Id()
@@ -260,7 +260,7 @@ If successful, return nil else return error
 func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 	log.Printf("! In update function")
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	// Add and remove VM to/from teams as necessary
@@ -378,7 +378,7 @@ d.SetID("") is called implicitly, no need to call it here
 func playerVirtualMachineDelete(d *schema.ResourceData, m interface{}) error {
 	log.Printf("! In delete function")
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	id := d.Id()

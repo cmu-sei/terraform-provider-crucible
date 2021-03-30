@@ -155,7 +155,7 @@ func playerView() *schema.Resource {
 // Call read to make sure everything worked
 func playerViewCreate(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	// Set up the view itself
@@ -314,7 +314,7 @@ func playerViewRead(d *schema.ResourceData, m interface{}) error {
 
 func playerViewUpdate(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	log.Printf("! In main update, before any updates, teams are %+v", d.Get("team"))
@@ -376,7 +376,7 @@ func playerViewUpdate(d *schema.ResourceData, m interface{}) error {
 // This will also delete any apps or teams inside this view
 func playerViewDelete(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	// Delete the view itself. This will also destroy anything inside the view, ie teams or applications
@@ -550,7 +550,7 @@ func updateApps(d *schema.ResourceData, m map[string]string) error {
 
 		if !util.PairInList(old, "app_id", value) {
 			info := structs.AppInfoFromMap(currMap)
-          	info.ID = uuid.New().String()
+			info.ID = uuid.New().String()
 			info.ViewID = d.Id()
 			*toCreate = append(*toCreate, info)
 		}
@@ -884,4 +884,3 @@ func updateInstances(old, current *[]*structs.TeamInfo, apps []interface{}, m ma
 
 	return nil
 }
-

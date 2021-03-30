@@ -42,7 +42,7 @@ func user() *schema.Resource {
 
 func userCreate(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	user := structs.PlayerUser{
@@ -81,7 +81,7 @@ func userCreate(d *schema.ResourceData, m interface{}) error {
 
 func userRead(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	user, err := api.ReadUser(d.Id(), m.(map[string]string))
@@ -112,7 +112,7 @@ func userRead(d *schema.ResourceData, m interface{}) error {
 
 func userUpdate(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	user := structs.PlayerUser{
@@ -150,7 +150,7 @@ func userUpdate(d *schema.ResourceData, m interface{}) error {
 
 func userDelete(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
-		return fmt.Errorf("Error configuring provider")
+		return fmt.Errorf("error configuring provider")
 	}
 
 	id := d.Id()
@@ -167,4 +167,3 @@ func userDelete(d *schema.ResourceData, m interface{}) error {
 
 	return api.DeleteUser(id, casted)
 }
-
