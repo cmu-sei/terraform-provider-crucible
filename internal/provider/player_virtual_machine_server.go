@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
@@ -28,10 +29,18 @@ func playerVirtualMachine() *schema.Resource {
 			"vm_id": {
 				Type:     schema.TypeString,
 				Optional: true,
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					return new == ""
+				},
 			},
 			"url": {
 				Type:     schema.TypeString,
 				Optional: true,
+				// The API adds extra information on to the end of the url, so consider the url unchanged if it starts
+				// with the url in the configuration
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					return strings.HasPrefix(old, new)
+				},
 			},
 			"name": {
 				Type:     schema.TypeString,
@@ -51,6 +60,7 @@ func playerVirtualMachine() *schema.Resource {
 			"console_connection_info": {
 				Type:     schema.TypeList,
 				Optional: true,
+				Default:  nil,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"hostname": {
@@ -133,9 +143,12 @@ func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 
 	// Grab the console connection info block if one exists
 	connectionGeneric := d.Get("console_connection_info").([]interface{})
-	var connection structs.ConsoleConnection
+	log.Printf("! In create, console connection info = %v", connectionGeneric)
+	var connection *structs.ConsoleConnection
 	if len(connectionGeneric) > 0 {
 		connection = structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))
+	} else {
+		connection = nil
 	}
 
 	reqBody := &structs.VMInfo{
@@ -238,9 +251,12 @@ func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
-	err = d.Set("console_connection_info", []interface{}{info.Connection.ToMap()})
-	if err != nil {
-		return err
+
+	if info.Connection != nil {
+		err = d.Set("console_connection_info", []interface{}{info.Connection.ToMap()})
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Printf("! Returning from read function without error")
@@ -326,7 +342,7 @@ func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 	connectionGeneric := d.Get("console_connection_info").([]interface{})
 	log.Printf("! console connection from data: %v", connectionGeneric)
 	log.Printf("! len = %v", len(connectionGeneric))
-	var connection structs.ConsoleConnection
+	var connection *structs.ConsoleConnection
 	if len(connectionGeneric) != 0 {
 		connection = structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))
 	}
