@@ -324,7 +324,12 @@ func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	connectionGeneric := d.Get("console_connection_info").([]interface{})
-	connection := structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))
+	log.Printf("! console connection from data: %v", connectionGeneric)
+	log.Printf("! len = %v", len(connectionGeneric))
+	var connection structs.ConsoleConnection
+	if len(connectionGeneric) != 0 {
+		connection = structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))
+	}
 
 	// The ID and TeamIDs parameters will be ignored by the API.
 	reqBody := &structs.VMInfo{
@@ -394,4 +399,3 @@ func playerVirtualMachineDelete(d *schema.ResourceData, m interface{}) error {
 	// We can return the result of the function call directly because it is nil on success or some error value on failure
 	return api.DeleteVM(id, casted)
 }
-

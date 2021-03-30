@@ -1,3 +1,3 @@
 cd cmd
-go build -o ../../terraform-provider-crucible.exe
+go build -o ../terraform-provider-crucible.exe
 cd ..
