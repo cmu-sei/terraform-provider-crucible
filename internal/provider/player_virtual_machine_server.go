@@ -341,8 +341,6 @@ func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	connectionGeneric := d.Get("console_connection_info").([]interface{})
-	log.Printf("! console connection from data: %v", connectionGeneric)
-	log.Printf("! len = %v", len(connectionGeneric))
 	var connection *structs.ConsoleConnection
 	if len(connectionGeneric) != 0 {
 		connection = structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))

@@ -350,8 +350,6 @@ func unpackResponse(resp *http.Response) *structs.VMInfo {
 	connection := asMap["consoleConnectionInfo"]
 	if connection != nil {
 		connectionPtr = structs.ConnectionFromMap(connection.(map[string]interface{}))
-	} else {
-		connectionPtr = nil
 	}
 
 	// Unpack the map into a struct. We *should* be able to unmarshal right into the struct, but it's refusing
