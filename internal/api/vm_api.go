@@ -346,7 +346,11 @@ func unpackResponse(resp *http.Response) *structs.VMInfo {
 	teams := asMap["teamIds"].([]interface{})
 	teamsConverted := util.ToStringSlice(&teams)
 
-	connection := asMap["consoleConnectionInfo"].(map[string]interface{})
+	var connectionPtr *structs.ConsoleConnection
+	connection := asMap["consoleConnectionInfo"]
+	if connection != nil {
+		connectionPtr = structs.ConnectionFromMap(connection.(map[string]interface{}))
+	}
 
 	// Unpack the map into a struct. We *should* be able to unmarshal right into the struct, but it's refusing
 	// to parse the userId field for some reason. This is logically the same, just rather inelegant
@@ -356,8 +360,7 @@ func unpackResponse(resp *http.Response) *structs.VMInfo {
 		Name:       asMap["name"].(string),
 		TeamIDs:    *teamsConverted,
 		UserID:     asMap["userId"],
-		Connection: structs.ConnectionFromMap(connection),
+		Connection: connectionPtr,
 	}
 	return ret
 }
-

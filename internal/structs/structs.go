@@ -20,7 +20,7 @@ type VMInfo struct {
 	Name       string
 	TeamIDs    []string
 	UserID     interface{}
-	Connection ConsoleConnection `json:"consoleConnectionInfo"`
+	Connection *ConsoleConnection `json:"consoleConnectionInfo"` // Use a pointer so this can be set to nil
 }
 
 // ConsoleConnection represents a console connection info block
@@ -33,8 +33,8 @@ type ConsoleConnection struct {
 }
 
 // ConnectionFromMap creates a ConsoleConnection object from an equivalent map
-func ConnectionFromMap(m map[string]interface{}) ConsoleConnection {
-	return ConsoleConnection{
+func ConnectionFromMap(m map[string]interface{}) *ConsoleConnection {
+	return &ConsoleConnection{
 		Hostname: m["hostname"].(string),
 		Port:     m["port"].(string),
 		Protocol: m["protocol"].(string),
@@ -335,4 +335,3 @@ type PlayerUser struct {
 	Role          interface{} `json:"roleId"`
 	IsSystemAdmin bool
 }
-
