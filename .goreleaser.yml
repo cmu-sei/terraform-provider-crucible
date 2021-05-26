@@ -3,7 +3,8 @@
 before:
   hooks:
     # this is just an example and not a requirement for provider building/publishing
-    - go mod tidy
+    - go mod init crucible_provider
+    - cd cmd
 builds:
 - env:
     # goreleaser does not work with CGO, it could also complicate
@@ -16,7 +17,6 @@ builds:
   ldflags:
     - '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}'
   goos:
-    - freebsd
     - windows
     - linux
     - darwin
