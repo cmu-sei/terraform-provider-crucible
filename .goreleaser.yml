@@ -4,13 +4,13 @@ before:
   hooks:
     # this is just an example and not a requirement for provider building/publishing
     - go mod init crucible_provider
-    - cd cmd
 builds:
 - env:
     # goreleaser does not work with CGO, it could also complicate
     # usage by users in CI/CD systems like Terraform Cloud where
     # they are unable to install libraries.
     - CGO_ENABLED=0
+  dir: cmd
   mod_timestamp: '{{ .CommitTimestamp }}'
   flags:
     - -trimpath
