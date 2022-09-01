@@ -1,4 +1,4 @@
-// Copyright 2021 Carnegie Mellon University. All Rights Reserved.
+// Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 package provider
@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 )
 
 // Maps the required operations to the functions defined below.
@@ -35,13 +36,25 @@ func playerVirtualMachine() *schema.Resource {
 				},
 			},
 			"url": {
-				Type:     schema.TypeString,
-				Optional: true,
-				// The API adds extra information on to the end of the url, so consider the url unchanged if it starts
-				// with the url in the configuration
+				Type:         schema.TypeString,
+				Optional:     true,
+				ValidateFunc: validation.IsURLWithHTTPorHTTPS,
+				// If defaultUrl is true, Url is actually blank and has been computed by the API,
+				// so it is unchanged if new value is also blank
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return strings.HasPrefix(old, new) || (strings.HasSuffix(old, "/vm/"+d.Id()+"/console") && new == "")
+					defaultUrl := false
+					defaultUrlObj := d.Get("default_url")
+
+					if defaultUrlObj != nil {
+						defaultUrl = defaultUrlObj.(bool)
+					}
+
+					return defaultUrl && len(new) == 0
 				},
+			},
+			"default_url": {
+				Type:     schema.TypeBool,
+				Computed: true,
 			},
 			"name": {
 				Type:     schema.TypeString,
@@ -53,6 +66,7 @@ func playerVirtualMachine() *schema.Resource {
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
+				MinItems: 1,
 			},
 			"user_id": {
 				Type:     schema.TypeString,
@@ -83,6 +97,34 @@ func playerVirtualMachine() *schema.Resource {
 						"password": {
 							Type:     schema.TypeString,
 							Optional: true,
+						},
+					},
+				},
+			},
+			"proxmox_vm_info": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Default:  nil,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"id": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								idTokens := strings.Split(new, "/")
+								return len(idTokens) == 3 && idTokens[2] == old
+							},
+						},
+						"node": {
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+						"type": {
+							Type:         schema.TypeString,
+							Optional:     true,
+							Default:      "QEMU",
+							ValidateFunc: validation.StringInSlice([]string{"QEMU", "LXC"}, false),
 						},
 					},
 				},
@@ -152,6 +194,16 @@ func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 		connection = nil
 	}
 
+	// Grab the proxmox vm info block if one exists
+	proxmoxGeneric := d.Get("proxmox_vm_info").([]interface{})
+	log.Printf("! In create, proxmox vm info = %v", proxmoxGeneric)
+	var proxmox *structs.ProxmoxInfo
+	if len(proxmoxGeneric) > 0 {
+		proxmox = structs.ProxmoxInfoFromMap(proxmoxGeneric[0].(map[string]interface{}))
+	} else {
+		proxmox = nil
+	}
+
 	reqBody := &structs.VMInfo{
 		ID:         vmID,
 		URL:        d.Get("url").(string),
@@ -159,6 +211,7 @@ func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 		TeamIDs:    *convertedTeamIDs,
 		UserID:     uid,
 		Connection: connection,
+		Proxmox:    proxmox,
 	}
 	log.Printf("! VM to be created with the following fields:\n %+v", reqBody)
 
@@ -172,6 +225,10 @@ func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 	// If no errors occurred, set the properties of d. This tells terraform the resource was created
 	d.SetId(vmID)
 	err = d.Set("url", reqBody.URL)
+	if err != nil {
+		return err
+	}
+	err = d.Set("default_url", reqBody.DefaultURL)
 	if err != nil {
 		return err
 	}
@@ -240,6 +297,10 @@ func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
+	err = d.Set("default_url", info.DefaultURL)
+	if err != nil {
+		return err
+	}
 	err = d.Set("name", info.Name)
 	if err != nil {
 		return err
@@ -255,6 +316,14 @@ func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
 
 	if info.Connection != nil {
 		err = d.Set("console_connection_info", []interface{}{info.Connection.ToMap()})
+		if err != nil {
+			return err
+		}
+	}
+
+	if info.Proxmox != nil {
+		err = d.Set("proxmox_vm_info", []interface{}{info.Proxmox.ToMap()})
+
 		if err != nil {
 			return err
 		}
@@ -310,11 +379,12 @@ func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 		log.Printf("! Teams to remove VM from: %+v", toRemove)
 		log.Printf("! Teams to add VM to: %+v", toAdd)
 
-		err := api.RemoveVMFromTeams(toRemove, d.Id(), casted)
+		err := api.AddVMToTeams(toAdd, d.Id(), casted)
 		if err != nil {
 			return err
 		}
-		err = api.AddVMToTeams(toAdd, d.Id(), casted)
+
+		err = api.RemoveVMFromTeams(toRemove, d.Id(), casted)
 		if err != nil {
 			return err
 		}
@@ -340,20 +410,34 @@ func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 		uid = d.Get("user_id")
 	}
 
+	var url string
+	if d.Get("default_url").(bool) {
+		url = ""
+	} else {
+		url = d.Get("url").(string)
+	}
+
 	connectionGeneric := d.Get("console_connection_info").([]interface{})
 	var connection *structs.ConsoleConnection
 	if len(connectionGeneric) != 0 {
 		connection = structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))
 	}
 
+	proxmoxGeneric := d.Get("proxmox_vm_info").([]interface{})
+	var proxmox *structs.ProxmoxInfo
+	if len(proxmoxGeneric) != 0 {
+		proxmox = structs.ProxmoxInfoFromMap(proxmoxGeneric[0].(map[string]interface{}))
+	}
+
 	// The ID and TeamIDs parameters will be ignored by the API.
 	reqBody := &structs.VMInfo{
 		ID:         "",
-		URL:        d.Get("url").(string),
+		URL:        url,
 		Name:       d.Get("name").(string),
 		TeamIDs:    []string{""},
 		UserID:     uid,
 		Connection: connection,
+		Proxmox:    proxmox,
 	}
 
 	casted := m.(map[string]string)

@@ -1,4 +1,4 @@
-// Copyright 2021 Carnegie Mellon University. All Rights Reserved.
+// Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 package api
@@ -481,4 +481,3 @@ func getRoleByName(role, auth string, m map[string]string) (string, error) {
 
 	return asMap["id"].(string), nil
 }
-

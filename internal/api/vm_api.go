@@ -1,4 +1,4 @@
-// Copyright 2021 Carnegie Mellon University. All Rights Reserved.
+// Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 package api
@@ -352,15 +352,23 @@ func unpackResponse(resp *http.Response) *structs.VMInfo {
 		connectionPtr = structs.ConnectionFromMap(connection.(map[string]interface{}))
 	}
 
+	var proxmoxPtr *structs.ProxmoxInfo
+	proxmox := asMap["proxmoxVmInfo"]
+	if proxmox != nil {
+		proxmoxPtr = structs.ProxmoxInfoFromMap(proxmox.(map[string]interface{}))
+	}
+
 	// Unpack the map into a struct. We *should* be able to unmarshal right into the struct, but it's refusing
 	// to parse the userId field for some reason. This is logically the same, just rather inelegant
 	ret := &structs.VMInfo{
 		ID:         asMap["id"].(string),
 		URL:        asMap["url"].(string),
+		DefaultURL: asMap["defaultUrl"].(bool),
 		Name:       asMap["name"].(string),
 		TeamIDs:    *teamsConverted,
 		UserID:     asMap["userId"],
 		Connection: connectionPtr,
+		Proxmox:    proxmoxPtr,
 	}
 	return ret
 }
