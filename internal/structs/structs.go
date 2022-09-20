@@ -1,4 +1,4 @@
-// Copyright 2021 Carnegie Mellon University. All Rights Reserved.
+// Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 package structs
@@ -17,10 +17,12 @@ import (
 type VMInfo struct {
 	ID         string
 	URL        string
+	DefaultURL bool
 	Name       string
 	TeamIDs    []string
 	UserID     interface{}
 	Connection *ConsoleConnection `json:"consoleConnectionInfo"` // Use a pointer so this can be set to nil
+	Proxmox    *ProxmoxInfo       `json:"proxmoxVmInfo"`         // Use a pointer so this can be set to nil
 }
 
 // ConsoleConnection represents a console connection info block
@@ -51,6 +53,55 @@ func (conn ConsoleConnection) ToMap() map[string]interface{} {
 		"protocol": conn.Protocol,
 		"username": conn.Username,
 		"password": conn.Password,
+	}
+}
+
+// ProxmoxInfo represents a proxmox vm info block
+type ProxmoxInfo struct {
+	Id   int
+	Node string
+	Type string
+}
+
+// ProxmoxInfoFromMap creates a ProxmoxInfo object from an equivalent map
+func ProxmoxInfoFromMap(m map[string]interface{}) *ProxmoxInfo {
+	// Id is an int in the API, but proxmox provider gives it in the form {node}/{type}/{id}
+	// Check if an int is given directly, or try to parse id from provider id string
+	var intId int
+	id := m["id"]
+
+	switch id.(type) {
+	case string:
+		var err error
+		strId := id.(string)
+		intId, err = strconv.Atoi(strId)
+
+		if err != nil {
+			idTokens := strings.Split(strId, "/")
+			intId, err = strconv.Atoi(idTokens[2])
+
+			if err != nil {
+				return nil
+			}
+		}
+	default:
+		// float64 is default JSON unmarshalled number type
+		intId = int(id.(float64))
+	}
+
+	return &ProxmoxInfo{
+		Id:   intId,
+		Node: m["node"].(string),
+		Type: m["type"].(string),
+	}
+}
+
+// ToMap turns a ProxmoxInfo into an equivalent map.
+func (proxmox ProxmoxInfo) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"id":   strconv.Itoa(proxmox.Id),
+		"node": proxmox.Node,
+		"type": proxmox.Type,
 	}
 }
 

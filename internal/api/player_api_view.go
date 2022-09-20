@@ -1,4 +1,4 @@
-// Copyright 2021 Carnegie Mellon University. All Rights Reserved.
+// Copyright 2022 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 package api
@@ -240,4 +240,3 @@ func getViewByID(id string, m map[string]string) (*http.Response, error) {
 
 	return response, nil
 }
-
