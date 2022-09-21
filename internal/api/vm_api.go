@@ -358,12 +358,19 @@ func unpackResponse(resp *http.Response) *structs.VMInfo {
 		proxmoxPtr = structs.ProxmoxInfoFromMap(proxmox.(map[string]interface{}))
 	}
 
+	defaultUrl := false
+	defaultUrlObj := asMap["defaultUrl"]
+
+	if defaultUrlObj != nil {
+		defaultUrl = defaultUrlObj.(bool)
+	}
+
 	// Unpack the map into a struct. We *should* be able to unmarshal right into the struct, but it's refusing
 	// to parse the userId field for some reason. This is logically the same, just rather inelegant
 	ret := &structs.VMInfo{
 		ID:         asMap["id"].(string),
 		URL:        asMap["url"].(string),
-		DefaultURL: asMap["defaultUrl"].(bool),
+		DefaultURL: defaultUrl,
 		Name:       asMap["name"].(string),
 		TeamIDs:    *teamsConverted,
 		UserID:     asMap["userId"],
