@@ -5,6 +5,7 @@ package structs
 
 import (
 	"crucible_provider/internal/util"
+	"database/sql"
 	"fmt"
 	"log"
 	"strconv"
@@ -385,4 +386,21 @@ type PlayerUser struct {
 	Name          string
 	Role          interface{} `json:"roleId"`
 	IsSystemAdmin bool
+}
+
+type Vlan struct {
+	Id          string
+	PoolId      string
+	PartitionId string
+	VlanId      int
+	InUse       bool
+	Reserved    bool
+	Tag         string
+}
+
+type VlanCreateCommand struct {
+	ProjectId   string
+	PartitionId string
+	Tag         string
+	VlanId      sql.NullInt32
 }

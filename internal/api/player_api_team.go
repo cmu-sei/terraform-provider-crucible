@@ -58,7 +58,7 @@ func CreateTeams(teams *[]*structs.TeamInfo, viewID string, m map[string]string)
 
 		log.Printf("! Team being created: %+v", asMap)
 
-		url := m["player_api_url"] + "views/" + viewID + "/teams"
+		url := util.GetPlayerApiUrl(m) + "views/" + viewID + "/teams"
 		request, err := http.NewRequest("POST", url, bytes.NewBuffer(asJSON))
 		if err != nil {
 			return err
@@ -146,7 +146,7 @@ func UpdateTeams(teams *[]*structs.TeamInfo, m map[string]string) error {
 			return err
 		}
 
-		url := m["player_api_url"] + "teams/" + team.ID.(string)
+		url := util.GetPlayerApiUrl(m) + "teams/" + team.ID.(string)
 		log.Printf("! Updating team. URL: %v", url)
 		log.Printf("! Updating team. Payload: %+v", team)
 		request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
@@ -184,7 +184,7 @@ func DeleteTeams(ids *[]string, m map[string]string) error {
 	}
 
 	for i, id := range *ids {
-		url := m["player_api_url"] + "teams/" + id
+		url := util.GetPlayerApiUrl(m) + "teams/" + id
 		request, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			return err
@@ -222,7 +222,7 @@ func AddPermissionsToTeam(teams *[]*structs.TeamInfo, m map[string]string) error
 	for _, team := range *teams {
 		log.Printf("! Adding permission to team %+v", team)
 		for _, perm := range team.Permissions {
-			url := m["player_api_url"] + "teams/" + team.ID.(string) + "/permissions/" + perm
+			url := util.GetPlayerApiUrl(m) + "teams/" + team.ID.(string) + "/permissions/" + perm
 			request, err := http.NewRequest("POST", url, nil)
 			if err != nil {
 				return err
@@ -265,7 +265,7 @@ func UpdateTeamPermissions(toAdd, toRemove map[string][]string, m map[string]str
 	// Add permissions
 	for team := range toAdd {
 		for _, perm := range toAdd[team] {
-			url := m["player_api_url"] + "teams/" + team + "/permissions/" + perm
+			url := util.GetPlayerApiUrl(m) + "teams/" + team + "/permissions/" + perm
 			request, err := http.NewRequest("POST", url, nil)
 			if err != nil {
 				return err
@@ -289,7 +289,7 @@ func UpdateTeamPermissions(toAdd, toRemove map[string][]string, m map[string]str
 	// Remove permissions
 	for team := range toRemove {
 		for _, perm := range toRemove[team] {
-			url := m["player_api_url"] + "teams/" + team + "/permissions/" + perm
+			url := util.GetPlayerApiUrl(m) + "teams/" + team + "/permissions/" + perm
 			request, err := http.NewRequest("DELETE", url, nil)
 			if err != nil {
 				return err
@@ -320,7 +320,7 @@ func GetRoleByID(role string, m map[string]string) (string, error) {
 		return "", err
 	}
 
-	url := m["player_api_url"] + "roles/" + role
+	url := util.GetPlayerApiUrl(m) + "roles/" + role
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
@@ -368,7 +368,7 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 		return nil, err
 	}
 
-	url := m["player_api_url"] + "views/" + viewID + "/teams"
+	url := util.GetPlayerApiUrl(m) + "views/" + viewID + "/teams"
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -449,7 +449,7 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 
 // Returns the ID of the role with the given name
 func getRoleByName(role, auth string, m map[string]string) (string, error) {
-	url := m["player_api_url"] + "roles/name/" + role
+	url := util.GetPlayerApiUrl(m) + "roles/name/" + role
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err

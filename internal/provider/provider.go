@@ -17,6 +17,7 @@ func Provider() *schema.Provider {
 			"crucible_player_view":                 playerView(),
 			"crucible_player_application_template": applicationTemplate(),
 			"crucible_player_user":                 user(),
+			"crucible_vlan":                        casterVlan(),
 		},
 		Schema: map[string]*schema.Schema{
 			"username": {
@@ -61,6 +62,13 @@ func Provider() *schema.Provider {
 					return os.Getenv("SEI_CRUCIBLE_PLAYER_API_URL"), nil
 				},
 			},
+			"caster_api_url": {
+				Type:     schema.TypeString,
+				Required: true,
+				DefaultFunc: func() (interface{}, error) {
+					return os.Getenv("SEI_CRUCIBLE_CASTER_API_URL"), nil
+				},
+			},
 			"client_id": {
 				Type:     schema.TypeString,
 				Required: true,
@@ -89,11 +97,12 @@ func config(r *schema.ResourceData) (interface{}, error) {
 	playerTok := r.Get("token_url")
 	vmAPI := r.Get("vm_api_url")
 	playerAPI := r.Get("player_api_url")
+	casterAPI := r.Get("caster_api_url")
 	id := r.Get("client_id")
 	sec := r.Get("client_secret")
 
 	if user == nil || pass == nil || auth == nil || playerTok == nil || vmAPI == nil || id == nil || sec == nil ||
-		playerAPI == nil {
+		playerAPI == nil || casterAPI == nil {
 		return nil, nil
 	}
 
@@ -104,6 +113,7 @@ func config(r *schema.ResourceData) (interface{}, error) {
 	m["player_token_url"] = playerTok.(string)
 	m["vm_api_url"] = vmAPI.(string)
 	m["player_api_url"] = playerAPI.(string)
+	m["caster_api_url"] = casterAPI.(string)
 	m["client_id"] = id.(string)
 	m["client_secret"] = sec.(string)
 	return m, nil

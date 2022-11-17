@@ -45,7 +45,7 @@ func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
 		return "", err
 	}
 
-	request, err := http.NewRequest("POST", m["player_api_url"]+"views", bytes.NewBuffer(asJSON))
+	request, err := http.NewRequest("POST", util.GetPlayerApiUrl(m)+"views", bytes.NewBuffer(asJSON))
 	if err != nil {
 		return "", err
 	}
@@ -146,7 +146,7 @@ func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
 		return err
 	}
 
-	url := m["player_api_url"] + "views/" + id
+	url := util.GetPlayerApiUrl(m) + "views/" + id
 	log.Printf("! url: %v", url)
 	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
 	if err != nil {
@@ -184,7 +184,7 @@ func DeleteView(id string, m map[string]string) error {
 		return err
 	}
 
-	url := m["player_api_url"] + "views/" + id
+	url := util.GetPlayerApiUrl(m) + "views/" + id
 	request, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
@@ -225,7 +225,7 @@ func getViewByID(id string, m map[string]string) (*http.Response, error) {
 		return nil, err
 	}
 
-	url := m["player_api_url"] + "views/" + id
+	url := util.GetPlayerApiUrl(m) + "views/" + id
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err

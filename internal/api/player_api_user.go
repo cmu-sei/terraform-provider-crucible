@@ -30,7 +30,7 @@ func RemoveUsers(teamsToUsers map[string][]string, m map[string]string) error {
 
 	for team := range teamsToUsers {
 		for _, user := range teamsToUsers[team] {
-			url := m["player_api_url"] + "teams/" + team + "/users/" + user
+			url := util.GetPlayerApiUrl(m) + "teams/" + team + "/users/" + user
 			request, err := http.NewRequest("DELETE", url, nil)
 			request.Header.Add("Authorization", "Bearer "+auth)
 			client := &http.Client{}
@@ -65,7 +65,7 @@ func AddUsersToTeam(users *[]string, team string, m map[string]string) error {
 	}
 
 	for _, user := range *users {
-		url := m["player_api_url"] + "teams/" + team + "/users/" + user
+		url := util.GetPlayerApiUrl(m) + "teams/" + team + "/users/" + user
 		request, err := http.NewRequest("POST", url, nil)
 		request.Header.Add("Authorization", "Bearer "+auth)
 		client := http.Client{}
@@ -102,7 +102,7 @@ func SetUserRole(teamID, viewID string, user structs.UserInfo, m map[string]stri
 	}
 
 	// Find the ID of the relevant TeamMembership
-	url := m["player_api_url"] + "users/" + user.ID + "/views/" + viewID + "/team-memberships"
+	url := util.GetPlayerApiUrl(m) + "users/" + user.ID + "/views/" + viewID + "/team-memberships"
 	id, err := findMembershipID(url, teamID, auth)
 	if err != nil {
 		return err
@@ -122,7 +122,7 @@ func SetUserRole(teamID, viewID string, user structs.UserInfo, m map[string]stri
 		return err
 	}
 
-	url = m["player_api_url"] + "team-memberships/" + id
+	url = util.GetPlayerApiUrl(m) + "team-memberships/" + id
 	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
 	request.Header.Add("Authorization", "Bearer "+auth)
 	request.Header.Set("Content-Type", "application/json")
@@ -172,7 +172,7 @@ func CreateUser(user structs.PlayerUser, m map[string]string) error {
 		return err
 	}
 
-	url := m["player_api_url"] + "users"
+	url := util.GetPlayerApiUrl(m) + "users"
 	request, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
@@ -272,7 +272,7 @@ func UpdateUser(user structs.PlayerUser, m map[string]string) error {
 		return err
 	}
 
-	url := m["player_api_url"] + "users/" + user.ID
+	url := util.GetPlayerApiUrl(m) + "users/" + user.ID
 	request, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
@@ -306,7 +306,7 @@ func DeleteUser(id string, m map[string]string) error {
 		return err
 	}
 
-	url := m["player_api_url"] + "users/" + id
+	url := util.GetPlayerApiUrl(m) + "users/" + id
 	request, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err
@@ -343,7 +343,7 @@ func addUser(userID, teamID string, m map[string]string) error {
 	}
 
 	// Add the user to their team
-	url := m["player_api_url"] + "teams/" + teamID + "/users/" + userID
+	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/users/" + userID
 	request, err := http.NewRequest("POST", url, nil)
 	request.Header.Add("Authorization", "Bearer "+auth)
 	client := &http.Client{}
@@ -401,7 +401,7 @@ func findMembershipID(url, teamID, auth string) (string, error) {
 
 // Returns the teamMembership with the given id
 func getMembership(id, auth string, m map[string]string) (string, error) {
-	url := m["player_api_url"] + "team-memberships/" + id
+	url := util.GetPlayerApiUrl(m) + "team-memberships/" + id
 
 	request, err := http.NewRequest("GET", url, nil)
 	request.Header.Add("Authorization", "Bearer "+auth)
@@ -439,7 +439,7 @@ func getUsersInTeam(teamID, viewID string, m map[string]string) ([]structs.UserI
 		return nil, err
 	}
 
-	url := m["player_api_url"] + "teams/" + teamID + "/users"
+	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/users"
 	request, err := http.NewRequest("GET", url, nil)
 	request.Header.Add("Authorization", "Bearer "+auth)
 	client := http.Client{}
@@ -471,7 +471,7 @@ func getUsersInTeam(teamID, viewID string, m map[string]string) ([]structs.UserI
 	for _, user := range *users {
 		userID := user["id"].(string)
 		// Get team membership by id, assign it to RoleID field
-		url = m["player_api_url"] + "users/" + userID + "/views/" + viewID + "/team-memberships"
+		url = util.GetPlayerApiUrl(m) + "users/" + userID + "/views/" + viewID + "/team-memberships"
 		id, err := findMembershipID(url, teamID, auth)
 		if err != nil {
 			return nil, err
@@ -498,7 +498,7 @@ func getUserByID(id string, m map[string]string) (*http.Response, error) {
 		return nil, err
 	}
 
-	url := m["player_api_url"] + "users/" + id
+	url := util.GetPlayerApiUrl(m) + "users/" + id
 	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

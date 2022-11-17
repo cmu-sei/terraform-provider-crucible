@@ -37,7 +37,7 @@ func CreateApps(apps *[]*structs.AppInfo, m map[string]string, viewID string) er
 			return err
 		}
 
-		url := m["player_api_url"] + "views/" + viewID + "/applications"
+		url := util.GetPlayerApiUrl(m) + "views/" + viewID + "/applications"
 		log.Printf("! creating app. url: %v", url)
 		log.Printf("! Payload: %+v", app)
 		request, err := http.NewRequest("POST", url, bytes.NewBuffer(asJSON))
@@ -82,7 +82,7 @@ func UpdateApps(apps *[]*structs.AppInfo, m map[string]string) error {
 			return err
 		}
 
-		url := m["player_api_url"] + "applications/" + app.ID
+		url := util.GetPlayerApiUrl(m) + "applications/" + app.ID
 		request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
 		if err != nil {
 			return err
@@ -114,7 +114,7 @@ func DeleteApps(ids *[]string, m map[string]string) error {
 	}
 
 	for i, id := range *ids {
-		url := m["player_api_url"] + "applications/" + id
+		url := util.GetPlayerApiUrl(m) + "applications/" + id
 		request, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			return err
@@ -166,7 +166,7 @@ func UpdateAppInstance(inst structs.AppInstance, teamID string, m map[string]str
 		return err
 	}
 
-	url := m["player_api_url"] + "application-instances/" + inst.ID
+	url := util.GetPlayerApiUrl(m) + "application-instances/" + inst.ID
 	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
 	if err != nil {
 		return err
@@ -219,7 +219,7 @@ func AddApplication(appID, teamID string, displayOrder float64, m map[string]str
 		return "", err
 	}
 
-	url := m["player_api_url"] + "teams/" + teamID + "/application-instances"
+	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/application-instances"
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(asJSON))
 	if err != nil {
 		return "", err
@@ -268,7 +268,7 @@ func DeleteAppInstances(toDelete *[]string, m map[string]string) error {
 	}
 
 	for i, id := range *toDelete {
-		url := m["player_api_url"] + "application-instances/" + id
+		url := util.GetPlayerApiUrl(m) + "application-instances/" + id
 		request, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			return err
@@ -306,7 +306,7 @@ func readApps(id string, m map[string]string) (*[]structs.AppInfo, error) {
 		return nil, err
 	}
 
-	url := m["player_api_url"] + "views/" + id + "/applications"
+	url := util.GetPlayerApiUrl(m) + "views/" + id + "/applications"
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -345,7 +345,7 @@ func getTeamAppInstances(teamID string, m map[string]string) (*[]structs.AppInst
 		return nil, err
 	}
 
-	url := m["player_api_url"] + "teams/" + teamID + "/application-instances"
+	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/application-instances"
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err

@@ -6,7 +6,7 @@ description: |-
 
 # Crucible Provider
 
-[Terraform](https://www.terraform.io/) is an Infrastructure as Code tool for managing cloud-based infrastructure. A provider is a plugin to Terraform that allows for the management of a given resource type. That is, a provider supplies the logic needed to manage infrastructure. There are three main resource types managed by this provider: virtual machines, views, and application templates. They are detailed below.
+[Terraform](https://www.terraform.io/) is an Infrastructure as Code tool for managing cloud-based infrastructure. A provider is a plugin to Terraform that allows for the management of a given resource type. That is, a provider supplies the logic needed to manage infrastructure. There are four main resource types managed by this provider: virtual machines, views, application templates, and vlans. They are detailed below.
 
 In order to use the provider, several environment variables must be set:
 
@@ -19,6 +19,7 @@ SEI_CRUCIBLE_CLIENT_ID=<your client ID for authentication>
 SEI_CRUCIBLE_CLIENT_SECRET=<your client secret for authentication>
 SEI_CRUCIBLE_VM_API_URL=<the url to the VM API>
 SEI_CRUCIBLE_PLAYER_API_URL=<the url to the Player API>
+SEI_CRUCIBLE_CASTER_API_URL=<the url to the Caster API>
 ```
 
 ## Virtual Machines
@@ -211,6 +212,49 @@ User properties
 - name: The name to assign this user. Required.
 - role: A role to give this user. Optional.
 - is_system_admin: Whether this user is a system admin. Computer.
+
+## VLANs
+
+The provider can interact with Crucible's Caster API in order to manage VLAN resources. VLANs can be acquired and released using this provider. The vlan_id of the returned VLAN is simply a number that will be marked as in use at the Caster API, allowing it to be used in a terraform configuration as the id of a VLAN in whatever infrastructure is being created without fear of collissions. Caster groups each set of 4096 VLANs into Pools, which can be further sub-divided into Partitions.
+
+The available properties are as follows:
+
+- project_id: The Id of a Project in Caster. If this Project exists and has been assigned a VLAN Partition, the requested VLAN will come from this Partition
+
+- partition_id: The Id of a Partition in Caster. If this Partition exists, the requested VLAN will come from this Partition. Only one of project_id or partition_id can be set on a vlan resource. If neither are set, the requested VLAN will come from the system-wide default Partition in Caster, if one has been set.
+
+- tag: If set, will return a VLAN with the specified tag, only if one with the requested tag exists and is not in use in the requested VLAN partition. Otherwise, an error will occur.
+
+- vlan_id: If set, will return a VLAN with the specified vlan_id, only if it is not in use in the requested Partition. Otherwise, an error will occur.
+
+Some example configurations:
+
+```hcl
+# use the default partition
+resource "crucible_vlan" "default" {}
+
+# use the partition assigned to the project
+resource "crucible_vlan" "project" {
+	project_id = var.project_id
+}
+
+# use a specific partition
+resource "crucible_vlan" "partition" {
+	partition_id = var.partition_id
+}
+
+# use a specific vlan_id in a specific partition
+resource "crucible_vlan" "id" {
+	partition_id = var.partition_id
+	vlan_id = 10
+}
+
+# use a vlan with a specific tag in a project's partition
+resource "crucible_vlan" "tag" {
+	project_id = var.project_id
+	tag = "red"
+}
+```
 
 ## Reporting bugs and requesting features
 
