@@ -5,6 +5,8 @@ package util
 
 import (
 	"context"
+	"log"
+	"strings"
 
 	"golang.org/x/oauth2"
 )
@@ -77,4 +79,41 @@ func StrSliceContains(arr *[]string, str string) bool {
 		}
 	}
 	return false
+}
+
+// Returns the normalized url for the player api
+func GetPlayerApiUrl(m map[string]string) string {
+	return GetApiUrl(m, "player_api_url")
+}
+
+// Returns the normalized url for the vm api
+func GetVmApiUrl(m map[string]string) string {
+	return GetApiUrl(m, "vm_api_url")
+}
+
+// Returns the normalized url for the caster api
+func GetCasterApiUrl(m map[string]string) string {
+	return GetApiUrl(m, "caster_api_url")
+}
+
+// GetApiUrl returns a url from the settings map, normalized to end in /api/
+//
+// param m: The settings map
+//
+// param urlName: The name of the url setting in the map
+//
+// Returns empty string is urlName is not found in the map
+func GetApiUrl(m map[string]string, urlName string) string {
+	log.Printf("! Getting API Url for %s", urlName)
+	if url, exists := m[urlName]; exists {
+		log.Printf("! URL = %s", url)
+		url = strings.TrimSuffix(url, "/")
+		url = strings.TrimSuffix(url, "/api")
+		url = url + "/api/"
+		log.Printf("! Normalized URL = %s", url)
+		return url
+	}
+
+	log.Printf("! URL not found")
+	return ""
 }

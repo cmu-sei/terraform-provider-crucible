@@ -44,7 +44,7 @@ func CreateAppTemplate(template *structs.AppTemplate, m map[string]string) (stri
 
 	log.Printf("! Creating template with payload %+v", payload)
 	// Create the template
-	url := m["player_api_url"] + "application-templates"
+	url := util.GetPlayerApiUrl(m) + "application-templates"
 	request, err := http.NewRequest("POST", url, bytes.NewBuffer(asJSON))
 	if err != nil {
 		return "", err
@@ -130,7 +130,7 @@ func AppTemplateUpdate(id string, template *structs.AppTemplate, m map[string]st
 	}
 
 	// Update the template
-	url := m["player_api_url"] + "application-templates/" + id
+	url := util.GetPlayerApiUrl(m) + "application-templates/" + id
 	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func DeleteAppTemplate(id string, m map[string]string) error {
 		return nil
 	}
 
-	url := m["player_api_url"] + "application-templates/" + id
+	url := util.GetPlayerApiUrl(m) + "application-templates/" + id
 	request, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
@@ -205,7 +205,7 @@ func getAppTemplateByID(id string, m map[string]string) (*http.Response, error) 
 		return nil, err
 	}
 
-	url := m["player_api_url"] + "application-templates/" + id
+	url := util.GetPlayerApiUrl(m) + "application-templates/" + id
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err

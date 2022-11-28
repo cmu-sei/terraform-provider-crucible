@@ -37,7 +37,7 @@ func CreateVM(requestBody *structs.VMInfo, m map[string]string) error {
 	}
 
 	// Set up the HTTP request
-	req, err := http.NewRequest("POST", m["vm_api_url"]+"vms", bytes.NewBuffer(asJSON))
+	req, err := http.NewRequest("POST", util.GetVmApiUrl(m)+"vms", bytes.NewBuffer(asJSON))
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {
 // Returns some error on failure and nil on success
 func UpdateVM(requestBody *structs.VMInfo, id string, m map[string]string) error {
 	log.Printf("! In update API wrapper")
-	url := m["vm_api_url"] + "vms/" + id
+	url := util.GetVmApiUrl(m) + "vms/" + id
 
 	// Get auth token
 	auth, err := util.GetAuth(m)
@@ -153,7 +153,7 @@ func UpdateVM(requestBody *structs.VMInfo, id string, m map[string]string) error
 // returns error on failure or nil on success
 func DeleteVM(id string, m map[string]string) error {
 	log.Printf("! In delete API wrapper")
-	url := m["vm_api_url"] + "vms/" + id
+	url := util.GetVmApiUrl(m) + "vms/" + id
 
 	// Get auth token
 	auth, err := util.GetAuth(m)
@@ -222,7 +222,7 @@ func RemoveVMFromTeams(teams *[]string, vm string, m map[string]string) error {
 	log.Printf("! In Remove VM from Team API wrapper")
 
 	for _, team := range *teams {
-		url := m["vm_api_url"] + "teams/" + team + "/vms/" + vm
+		url := util.GetVmApiUrl(m) + "teams/" + team + "/vms/" + vm
 		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			return err
@@ -267,7 +267,7 @@ func AddVMToTeams(teams *[]string, vm string, m map[string]string) error {
 	log.Printf("! In add team to VM API wrapper")
 
 	for _, team := range *teams {
-		url := m["vm_api_url"] + "teams/" + team + "/vms/" + vm
+		url := util.GetVmApiUrl(m) + "teams/" + team + "/vms/" + vm
 		req, err := http.NewRequest("POST", url, nil)
 		if err != nil {
 			return err
@@ -307,7 +307,7 @@ func getVMByID(id string, m map[string]string) (*http.Response, error) {
 	}
 
 	// Set up the request
-	url := m["vm_api_url"] + "vms/" + id
+	url := util.GetVmApiUrl(m) + "vms/" + id
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Printf("! In getVMByID, error setting up request")
