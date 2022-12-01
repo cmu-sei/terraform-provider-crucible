@@ -51,6 +51,7 @@ resource "crucible_player_virtual_machine" "guacamole_example" {
 		username = "user"
 		password = "example"
 	}
+	embeddable = false
 }
 
 resource "crucible_player_virtual_machine" "proxmox_example" {
@@ -60,6 +61,7 @@ resource "crucible_player_virtual_machine" "proxmox_example" {
 		id = 100
 		node = "pve"
 	}
+	embeddable = true
 }
 ```
 
@@ -84,9 +86,12 @@ The name of the resource type - the first string after the word "resource" - mus
   - password: An optional password to connect with
 
 - proxmox_vm_info: An optional object with additional metadata required for a virtual machine on a Proxmox hypervisor
+
   - id: The integer id of the virtual machine within Proxmox
   - node: The name of the node that the virtual machine is running on
   - type: The type of virtual machine (QEMU, LXC). If omitted, defaults to QEMU
+
+- embeddable: An optional boolean field denoting if the UI should allow opening of this virtual machine's console in the embedded view. If false, the UI should only allow opening the console in a new tab. Defaults to true.
 
 ## Player Views
 
