@@ -22,6 +22,7 @@ type VMInfo struct {
 	Name       string
 	TeamIDs    []string
 	UserID     interface{}
+	Embeddable bool
 	Connection *ConsoleConnection `json:"consoleConnectionInfo"` // Use a pointer so this can be set to nil
 	Proxmox    *ProxmoxInfo       `json:"proxmoxVmInfo"`         // Use a pointer so this can be set to nil
 }

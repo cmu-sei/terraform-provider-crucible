@@ -358,11 +358,19 @@ func unpackResponse(resp *http.Response) *structs.VMInfo {
 		proxmoxPtr = structs.ProxmoxInfoFromMap(proxmox.(map[string]interface{}))
 	}
 
+	// set defaults if defaultUrl and embeddable don't exist (older api versions)
 	defaultUrl := false
 	defaultUrlObj := asMap["defaultUrl"]
 
 	if defaultUrlObj != nil {
 		defaultUrl = defaultUrlObj.(bool)
+	}
+
+	embeddable := true
+	embeddableObj := asMap["embeddable"]
+
+	if embeddableObj != nil {
+		embeddable = embeddableObj.(bool)
 	}
 
 	// Unpack the map into a struct. We *should* be able to unmarshal right into the struct, but it's refusing
@@ -374,6 +382,7 @@ func unpackResponse(resp *http.Response) *structs.VMInfo {
 		Name:       asMap["name"].(string),
 		TeamIDs:    *teamsConverted,
 		UserID:     asMap["userId"],
+		Embeddable: embeddable,
 		Connection: connectionPtr,
 		Proxmox:    proxmoxPtr,
 	}

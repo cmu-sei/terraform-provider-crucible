@@ -72,6 +72,11 @@ func playerVirtualMachine() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+			"embeddable": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
 			"console_connection_info": {
 				Type:     schema.TypeList,
 				Optional: true,
@@ -210,6 +215,7 @@ func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 		Name:       d.Get("name").(string),
 		TeamIDs:    *convertedTeamIDs,
 		UserID:     uid,
+		Embeddable: d.Get("embeddable").(bool),
 		Connection: connection,
 		Proxmox:    proxmox,
 	}
@@ -310,6 +316,10 @@ func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
 		return err
 	}
 	err = d.Set("team_ids", info.TeamIDs)
+	if err != nil {
+		return err
+	}
+	err = d.Set("embeddable", info.Embeddable)
 	if err != nil {
 		return err
 	}
@@ -417,6 +427,13 @@ func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 		url = d.Get("url").(string)
 	}
 
+	var embeddable bool
+	if d.Get("embeddable").(bool) {
+		embeddable = d.Get("embeddable").(bool)
+	} else {
+		embeddable = true
+	}
+
 	connectionGeneric := d.Get("console_connection_info").([]interface{})
 	var connection *structs.ConsoleConnection
 	if len(connectionGeneric) != 0 {
@@ -436,6 +453,7 @@ func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
 		Name:       d.Get("name").(string),
 		TeamIDs:    []string{""},
 		UserID:     uid,
+		Embeddable: embeddable,
 		Connection: connection,
 		Proxmox:    proxmox,
 	}
