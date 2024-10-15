@@ -89,9 +89,12 @@ func Provider() *schema.Provider {
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
-				Required: true,
+				Optional: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_CLIENT_SCOPES"), nil
+					if val := os.Getenv("SEI_CRUCIBLE_CLIENT_SCOPES"); val != "" {
+						return val, nil
+					}
+					return []interface{}{}, nil // Return an empty list if the environment variable is not set
 				},
 			},
 		},

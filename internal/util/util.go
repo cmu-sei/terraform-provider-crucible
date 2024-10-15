@@ -26,6 +26,10 @@ func ToStringSlice(data *[]interface{}) *[]string {
 func GetAuth(m map[string]string) (string, error) {
 	scopes := strings.Split(m["client_scopes"], ",")
 
+	if len(scopes) == 0 || (len(scopes) == 1 && scopes[0] == "") {
+		scopes = nil
+	}
+
 	con := &oauth2.Config{
 		ClientID:     m["client_id"],
 		ClientSecret: m["client_secret"],
