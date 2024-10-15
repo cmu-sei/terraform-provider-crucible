@@ -5,6 +5,7 @@ package provider
 
 import (
 	"os"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 )
@@ -83,6 +84,16 @@ func Provider() *schema.Provider {
 					return os.Getenv("SEI_CRUCIBLE_CLIENT_SECRET"), nil
 				},
 			},
+			"client_scopes": {
+				Type: schema.TypeList,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+				Required: true,
+				DefaultFunc: func() (interface{}, error) {
+					return os.Getenv("SEI_CRUCIBLE_CLIENT_SCOPES"), nil
+				},
+			},
 		},
 		ConfigureFunc: config,
 	}
@@ -100,11 +111,17 @@ func config(r *schema.ResourceData) (interface{}, error) {
 	casterAPI := r.Get("caster_api_url")
 	id := r.Get("client_id")
 	sec := r.Get("client_secret")
-
-	if user == nil || pass == nil || auth == nil || playerTok == nil || vmAPI == nil || id == nil || sec == nil ||
-		playerAPI == nil || casterAPI == nil {
-		return nil, nil
+	scopesInterface := r.Get("client_scopes").([]interface{})
+	scopesList := make([]string, len(scopesInterface))
+	for i, v := range scopesInterface {
+		scopesList[i] = v.(string) // Convert each item to string
 	}
+	scopes := strings.Join(scopesList, ",")
+
+	// if user == nil || pass == nil || auth == nil || playerTok == nil || vmAPI == nil || id == nil || sec == nil ||
+	// 	playerAPI == nil || casterAPI == nil {
+	// 	return nil, nil
+	// }
 
 	m := make(map[string]string)
 	m["username"] = user.(string)
@@ -116,5 +133,6 @@ func config(r *schema.ResourceData) (interface{}, error) {
 	m["caster_api_url"] = casterAPI.(string)
 	m["client_id"] = id.(string)
 	m["client_secret"] = sec.(string)
+	m["client_scopes"] = scopes
 	return m, nil
 }

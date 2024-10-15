@@ -24,9 +24,12 @@ func ToStringSlice(data *[]interface{}) *[]string {
 
 // GetAuth gets an auth token.
 func GetAuth(m map[string]string) (string, error) {
+	scopes := strings.Split(m["client_scopes"], ",")
+
 	con := &oauth2.Config{
 		ClientID:     m["client_id"],
 		ClientSecret: m["client_secret"],
+		Scopes:       scopes,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  m["auth_url"],
 			TokenURL: m["player_token_url"],

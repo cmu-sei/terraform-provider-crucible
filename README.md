@@ -12,8 +12,23 @@ SEI_CRUCIBLE_CLIENT_ID=<your client ID for authentication>
 SEI_CRUCIBLE_CLIENT_SECRET=<your client secret for authentication>
 SEI_CRUCIBLE_VM_API_URL=<the url to the VM API>
 SEI_CRUCIBLE_PLAYER_API_URL=<the url to the Player API>
+SEI_CRUCIBLE_CASTER_API_URL=<the url to the Caster API>
+SEI_CRUCIBLE_CLIENT_SCOPES='["caster", "vm", "player"]' <Scopes for authorising users to services>
 ```
+Alternatively you can set the variables in your main.tf
 
+```hcl
+provider "crucible" {
+  username       = "<your username>"
+  password       = "<your password>"
+  auth_url       = "<the url to the authentication service>"
+  token_url      = "<the url where you get your player authentication token>"
+  caster_api_url = "https://caster-api.vcrucible.ixtp.local"
+  client_id = "<your client ID for authentication>"
+  client_secret = "<your client secret for authentication>"
+  client_scopes = ["caster", "vm", "player"] <Scopes for authorising users to services>
+}
+```
 ## Virtual Machines
 
 The provider can interact with Crucible's VM API in order to manage virtual machine resources. VMs can be created, read, updated, and destroyed using Terraform with this provider. Some example configs for single virtual machines are defined below.
