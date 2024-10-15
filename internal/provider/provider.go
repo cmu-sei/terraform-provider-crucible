@@ -118,10 +118,10 @@ func config(r *schema.ResourceData) (interface{}, error) {
 	}
 	scopes := strings.Join(scopesList, ",")
 
-	// if user == nil || pass == nil || auth == nil || playerTok == nil || vmAPI == nil || id == nil || sec == nil ||
-	// 	playerAPI == nil || casterAPI == nil {
-	// 	return nil, nil
-	// }
+	if user == nil || pass == nil || auth == nil || playerTok == nil || vmAPI == nil || id == nil || sec == nil ||
+		playerAPI == nil || casterAPI == nil || scopesInterface == nil {
+		return nil, nil
+	}
 
 	m := make(map[string]string)
 	m["username"] = user.(string)
