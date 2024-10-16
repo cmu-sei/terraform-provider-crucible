@@ -10,10 +10,27 @@ SEI_CRUCIBLE_AUTH_URL=<the url to the authentication service>
 SEI_CRUCIBLE_TOK_URL=<the url where you get your player authentication token>
 SEI_CRUCIBLE_CLIENT_ID=<your client ID for authentication>
 SEI_CRUCIBLE_CLIENT_SECRET=<your client secret for authentication>
+SEI_CRUCIBLE_CLIENT_SCOPES='["<Scopes for authorising users to services>"]' 
 SEI_CRUCIBLE_VM_API_URL=<the url to the VM API>
 SEI_CRUCIBLE_PLAYER_API_URL=<the url to the Player API>
+SEI_CRUCIBLE_CASTER_API_URL=<the url to the Caster API>
 ```
+Alternatively you can set the variables in your main.tf
 
+```hcl
+provider "crucible" {
+  username       = "<your username>"
+  password       = "<your password>"
+  auth_url       = "<the url to the authentication service>"
+  token_url      = "<the url where you get your player authentication token>"
+  client_id      = "<your client ID for authentication>"
+  client_secret  = "<your client secret for authentication>"
+  client_scopes  = ["<Scopes for authorising users to services>"] 
+  vm_api_url     = "<the url to the VM API>"
+  player_api_url = "<the url to the Player API>"
+  caster_api_url = "<the url to the Caster API>"
+}
+```
 ## Virtual Machines
 
 The provider can interact with Crucible's VM API in order to manage virtual machine resources. VMs can be created, read, updated, and destroyed using Terraform with this provider. Some example configs for single virtual machines are defined below.
