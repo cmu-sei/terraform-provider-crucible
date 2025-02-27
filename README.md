@@ -40,13 +40,6 @@ resource "crucible_player_virtual_machine" "vsphere_example" {
 	vm_id = "6a7ec409-d275-4b31-94d3-a51cb61d2519"
 	name = "User1"
 	team_ids = ["46420756-9421-41b7-99b4-1b6d2cba29b3"]
-	console_connection_info {
-		hostname = "vm1.example.local"
-		port = "22"
-		protocol = "ssh"
-		username = "user"
-		password = "example"
-	}
 }
 
 resource "crucible_player_virtual_machine" "guacamole_example" {
