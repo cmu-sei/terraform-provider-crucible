@@ -42,7 +42,7 @@ func CreateTeams(teams *[]*structs.TeamInfo, viewID string, m map[string]string)
 
 		log.Printf("! Team's role: %v", role)
 		if role.(string) != "" {
-			roleID, err := getRoleByName(role.(string), auth, m)
+			roleID, err := getTeamRoleByName(role.(string), auth, m)
 			if err != nil {
 				return err
 			}
@@ -131,8 +131,9 @@ func UpdateTeams(teams *[]*structs.TeamInfo, m map[string]string) error {
 
 	// Update each team
 	for i, team := range *teams {
+		log.Printf("! Team loop")
 		// Set up payload for PUT request
-		roleID, err := getRoleByName(team.Role.(string), auth, m)
+		roleID, err := getTeamRoleByName(team.Role.(string), auth, m)
 		if err != nil {
 			return err
 		}
@@ -480,4 +481,42 @@ func getRoleByName(role, auth string, m map[string]string) (string, error) {
 	}
 
 	return asMap["id"].(string), nil
+}
+
+// Returns the ID of the team role with the given name
+func getTeamRoleByName(roleName, auth string, m map[string]string) (string, error) {
+	url := util.GetPlayerApiUrl(m) + "team-roles"
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	request.Header.Add("Authorization", "Bearer "+auth)
+
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+
+	status := response.StatusCode
+	if status != http.StatusOK {
+		return "", fmt.Errorf("player API returned with status code %d looking for role %v", status, roleName)
+	}
+
+	var roles []map[string]interface{}
+	if err := json.NewDecoder(response.Body).Decode(&roles); err != nil {
+		return "", err
+	}
+
+	for _, role := range roles {
+		if name, ok := role["name"].(string); ok && name == roleName {
+			if id, ok := role["id"].(string); ok {
+				return id, nil
+			}
+			return "", fmt.Errorf("role %q found but has no valid id", roleName)
+		}
+	}
+
+	return "", fmt.Errorf("role %q not found in returned list", roleName)
 }

@@ -209,7 +209,6 @@ User properties
 - user_id: The GUID to create this user with. Will probably point to an Identity account's GUID. Required.
 - name: The name to assign this user. Required.
 - role: A role to give this user. Optional.
-- is_system_admin: Whether this user is a system admin. Computer.
 
 ## VLANs
 

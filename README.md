@@ -3,18 +3,20 @@
 [Terraform](https://www.terraform.io/) is an Infrastructure as Code tool for managing cloud-based infrastructure. A provider is a plugin to Terraform that allows for the management of a given resource type. That is, a provider supplies the logic needed to manage infrastructure. There are three main resource types managed by this provider: virtual machines, views, and application templates. They are detailed below.
 
 In order to use the provider, several environment variables must be set:
-``` 
+
+```
 SEI_CRUCIBLE_USERNAME=<your username>
 SEI_CRUCIBLE_PASSWORD=<your password>
 SEI_CRUCIBLE_AUTH_URL=<the url to the authentication service>
 SEI_CRUCIBLE_TOK_URL=<the url where you get your player authentication token>
 SEI_CRUCIBLE_CLIENT_ID=<your client ID for authentication>
 SEI_CRUCIBLE_CLIENT_SECRET=<your client secret for authentication>
-SEI_CRUCIBLE_CLIENT_SCOPES='["<Scopes for authorising users to services>"]' 
+SEI_CRUCIBLE_CLIENT_SCOPES='["<Scopes for authorising users to services>"]'
 SEI_CRUCIBLE_VM_API_URL=<the url to the VM API>
 SEI_CRUCIBLE_PLAYER_API_URL=<the url to the Player API>
 SEI_CRUCIBLE_CASTER_API_URL=<the url to the Caster API>
 ```
+
 Alternatively you can set the variables in your main.tf
 
 ```hcl
@@ -25,12 +27,13 @@ provider "crucible" {
   token_url      = "<the url where you get your player authentication token>"
   client_id      = "<your client ID for authentication>"
   client_secret  = "<your client secret for authentication>"
-  client_scopes  = ["<Scopes for authorising users to services>"] 
+  client_scopes  = ["<Scopes for authorising users to services>"]
   vm_api_url     = "<the url to the VM API>"
   player_api_url = "<the url to the Player API>"
   caster_api_url = "<the url to the Caster API>"
 }
 ```
+
 ## Virtual Machines
 
 The provider can interact with Crucible's VM API in order to manage virtual machine resources. VMs can be created, read, updated, and destroyed using Terraform with this provider. Some example configs for single virtual machines are defined below.
@@ -213,7 +216,6 @@ User properties
 - user_id: The GUID to create this user with. Will probably point to an Identity account's GUID. Required.
 - name: The name to assign this user. Required.
 - role: A role to give this user. Optional.
-- is_system_admin: Whether this user is a system admin. Computer.
 
 ## Reporting bugs and requesting features
 

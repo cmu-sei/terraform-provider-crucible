@@ -98,6 +98,7 @@ func playerView() *schema.Resource {
 						"role": {
 							Type:     schema.TypeString,
 							Optional: true,
+							Default:  "View Member",
 						},
 						"permissions": {
 							Type:     schema.TypeList,
