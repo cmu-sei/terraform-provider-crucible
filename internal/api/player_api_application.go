@@ -58,6 +58,17 @@ func CreateApps(apps *[]*structs.AppInfo, m map[string]string, viewID string) er
 		if status != http.StatusCreated {
 			return fmt.Errorf("player API returned with status code %d when creating app. %d apps created before error", status, i)
 		}
+
+		// Read and parse response body
+		var createdApp struct {
+			Id string `json:"id"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&createdApp); err != nil {
+			return fmt.Errorf("failed to decode response JSON: %w", err)
+		}
+
+		// Assign returned ID to app
+		app.ID = createdApp.Id
 	}
 	return nil
 }

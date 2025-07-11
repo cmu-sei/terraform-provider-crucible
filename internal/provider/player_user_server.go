@@ -32,10 +32,6 @@ func user() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			"is_system_admin": {
-				Type:     schema.TypeBool,
-				Computed: true,
-			},
 		},
 	}
 }
@@ -49,7 +45,6 @@ func userCreate(d *schema.ResourceData, m interface{}) error {
 		ID:            d.Get("user_id").(string),
 		Name:          d.Get("name").(string),
 		Role:          d.Get("role"),
-		IsSystemAdmin: d.Get("is_system_admin").(bool),
 	}
 
 	casted := m.(map[string]string)
@@ -67,11 +62,6 @@ func userCreate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	err = d.Set("role", user.Role)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("is_system_admin", user.IsSystemAdmin)
 	if err != nil {
 		return err
 	}
@@ -107,7 +97,7 @@ func userRead(d *schema.ResourceData, m interface{}) error {
 		return err
 	}
 
-	return d.Set("is_system_admin", user.IsSystemAdmin)
+	return nil
 }
 
 func userUpdate(d *schema.ResourceData, m interface{}) error {
@@ -119,7 +109,6 @@ func userUpdate(d *schema.ResourceData, m interface{}) error {
 		ID:            d.Get("user_id").(string),
 		Name:          d.Get("name").(string),
 		Role:          d.Get("role"),
-		IsSystemAdmin: d.Get("is_system_admin").(bool),
 	}
 	casted := m.(map[string]string)
 
@@ -136,11 +125,6 @@ func userUpdate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	err = d.Set("role", user.Role)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("is_system_admin", user.IsSystemAdmin)
 	if err != nil {
 		return err
 	}

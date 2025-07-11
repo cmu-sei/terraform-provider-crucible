@@ -386,7 +386,6 @@ type PlayerUser struct {
 	ID            string
 	Name          string
 	Role          interface{} `json:"roleId"`
-	IsSystemAdmin bool
 }
 
 type Vlan struct {
