@@ -4,9 +4,9 @@
 package provider
 
 import (
-	"crucible_provider/internal/api"
-	"crucible_provider/internal/structs"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
@@ -42,9 +42,9 @@ func userCreate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	user := structs.PlayerUser{
-		ID:            d.Get("user_id").(string),
-		Name:          d.Get("name").(string),
-		Role:          d.Get("role"),
+		ID:   d.Get("user_id").(string),
+		Name: d.Get("name").(string),
+		Role: d.Get("role"),
 	}
 
 	casted := m.(map[string]string)
@@ -106,9 +106,9 @@ func userUpdate(d *schema.ResourceData, m interface{}) error {
 	}
 
 	user := structs.PlayerUser{
-		ID:            d.Get("user_id").(string),
-		Name:          d.Get("name").(string),
-		Role:          d.Get("role"),
+		ID:   d.Get("user_id").(string),
+		Name: d.Get("name").(string),
+		Role: d.Get("role"),
 	}
 	casted := m.(map[string]string)
 

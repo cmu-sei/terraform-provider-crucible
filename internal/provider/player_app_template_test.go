@@ -4,9 +4,9 @@
 package provider_test
 
 import (
-	"crucible_provider/internal/api"
-	"crucible_provider/internal/provider"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
 	"strconv"
 	"strings"
 	"testing"

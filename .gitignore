@@ -1,6 +1,4 @@
 .terraform
-go.sum
-go.mod
 terraform-provider-crucible.exe
 terraform-provider-crucible
 terraform.tfstate
@@ -13,4 +11,4 @@ api_test.go
 out.log
 *.http
 .terraform*
-main.tf
+test/*
