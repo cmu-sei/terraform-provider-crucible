@@ -25,17 +25,17 @@ resource "crucible_view_network" "example" {
 
 - `view_id` - (Required, ForceNew) The UUID of the view this network belongs to.
 
-- `provider_type` - (Required, ForceNew) The virtualization provider type. Must be one of: `Unknown`, `Vsphere`, `Proxmox`, `Azure`.
+- `provider_type` - (Required) The virtualization provider type. Must be one of: `Unknown`, `Vsphere`, `Proxmox`, `Azure`.
 
-- `provider_instance_id` - (Required, ForceNew) Identifier for the provider instance (e.g., vCenter FQDN).
+- `provider_instance_id` - (Required) Identifier for the provider instance (e.g., vCenter FQDN).
 
-- `network_id` - (Required, ForceNew) The provider-specific network identifier (e.g., vSphere dvportgroup ID).
+- `network_id` - (Required) The provider-specific network identifier (e.g., vSphere dvportgroup ID).
 
 - `name` - (Required) Display name for the network.
 
 - `team_ids` - (Optional) List of team UUIDs allowed to use this network. Defaults to empty (no teams).
 
-~> Changing `view_id`, `provider_type`, `provider_instance_id`, or `network_id` will destroy and recreate the resource, as these fields form the API's unique constraint.
+~> Changing `view_id` will destroy and recreate the resource.
 
 ## Attribute Reference
 
