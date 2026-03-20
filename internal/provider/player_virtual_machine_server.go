@@ -4,10 +4,10 @@
 package provider
 
 import (
-	"crucible_provider/internal/api"
-	"crucible_provider/internal/structs"
-	"crucible_provider/internal/util"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"log"
 	"sort"
 	"strings"
@@ -259,9 +259,10 @@ func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
 Call API to get resource. Arg to API function is the ID.
 If VM does not exist, set ID to "" and return nil.
 Take the data structure returned by the API and use it to update d using err = d.Set()
-if err != nil {
-    return err
-}
+
+	if err != nil {
+	    return err
+	}
 */
 func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
 	log.Printf("! In read function")
@@ -347,9 +348,11 @@ func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
 Read data from .tf file using d.Get() (as in Create)
 Here we only need url, name, userId, and allowedNetworks
 Update d using this new data with err = d.Set()
-if err != nil {
-    return err
-}
+
+	if err != nil {
+	    return err
+	}
+
 Update the VM using update API function
 If successful, return nil else return error
 */

@@ -5,10 +5,10 @@ package api
 
 import (
 	"bytes"
-	"crucible_provider/internal/structs"
-	"crucible_provider/internal/util"
 	"encoding/json"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"log"
 	"net/http"
 )
@@ -66,7 +66,7 @@ func CreateVM(requestBody *structs.VMInfo, m map[string]string) error {
 
 // GetVMInfo Wraps the VM API call for retrieving vm info.
 //
-// Param id the id of the VM to look up
+// # Param id the id of the VM to look up
 //
 // Returns a struct containing the VM's info, and a possible error
 func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {

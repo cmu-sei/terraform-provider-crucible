@@ -1,0 +1,64 @@
+version: "3"
+
+tasks:
+  build:
+    desc: Build the provider binary
+    cmds:
+      - go build .
+
+  test:
+    desc: Run provider tests
+    cmds:
+      - go test -v ./internal/provider/...
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -f terraform-provider-crucible terraform-provider-crucible.exe
+
+  fmt:
+    desc: Format Go source files
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Tidy module dependencies
+    cmds:
+      - go mod tidy
+
+  install:
+    desc: Build, install, and configure Terraform to use the local provider
+    cmds:
+      - go install .
+      - mkdir -p ~/.terraform.d
+      - |
+        cat > ~/.terraform.d/crucible-dev.tfrc <<EOF
+        provider_installation {
+          dev_overrides {
+            "cmu-sei/crucible" = "$(go env GOPATH)/bin"
+          }
+          direct {}
+        }
+        EOF
+      - echo "Installed provider and wrote ~/.terraform.d/crucible-dev.tfrc"
+      - echo "Terraform will now use the local build. Run 'task uninstall' to revert."
+
+  uninstall:
+    desc: Remove the local provider override and binary
+    cmds:
+      - rm -f ~/.terraform.d/crucible-dev.tfrc
+      - rm -f "$(go env GOPATH)/bin/terraform-provider-crucible"
+      - echo "Removed provider override and binary."
+
+  ci:
+    desc: Run all checks (tidy, fmt, vet, test)
+    cmds:
+      - task: tidy
+      - task: fmt
+      - task: vet
+      - task: test

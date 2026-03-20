@@ -4,10 +4,10 @@
 package provider_test
 
 import (
-	"crucible_provider/internal/structs"
-	"crucible_provider/internal/util"
 	"encoding/json"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"io/ioutil"
 	"os"
 	"strconv"

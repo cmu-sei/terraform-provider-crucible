@@ -4,11 +4,11 @@
 package provider_test
 
 import (
-	"crucible_provider/internal/api"
-	"crucible_provider/internal/provider"
-	"crucible_provider/internal/structs"
-	"crucible_provider/internal/util"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"reflect"
 	"sort"
 	"strconv"

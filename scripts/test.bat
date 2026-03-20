@@ -1,1 +1,0 @@
-go test -v crucible_provider/internal/provider

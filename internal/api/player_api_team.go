@@ -5,10 +5,10 @@ package api
 
 import (
 	"bytes"
-	"crucible_provider/internal/structs"
-	"crucible_provider/internal/util"
 	"encoding/json"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"log"
 	"net/http"
 )

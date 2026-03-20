@@ -4,9 +4,9 @@
 package structs
 
 import (
-	"crucible_provider/internal/util"
 	"database/sql"
 	"fmt"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"log"
 	"strconv"
 	"strings"
@@ -383,9 +383,9 @@ func InstanceHasID(arr *[]AppInstance, id string) bool {
 // PlayerUser represents a user outside of a team. IE one that simply exists within player. Used for the
 // user resource type.
 type PlayerUser struct {
-	ID            string
-	Name          string
-	Role          interface{} `json:"roleId"`
+	ID   string
+	Name string
+	Role interface{} `json:"roleId"`
 }
 
 type Vlan struct {
@@ -403,4 +403,15 @@ type VlanCreateCommand struct {
 	PartitionId string
 	Tag         string
 	VlanId      sql.NullInt32
+}
+
+// ViewNetworkInfo holds information about a network entry within a view
+type ViewNetworkInfo struct {
+	ID                 string
+	ViewID             string
+	ProviderType       string
+	ProviderInstanceId string
+	NetworkId          string
+	Name               string
+	TeamIds            []string
 }

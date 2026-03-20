@@ -4,7 +4,7 @@
 package main
 
 import (
-	"crucible_provider/internal/provider"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
 
 	"github.com/hashicorp/terraform-plugin-sdk/plugin"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
