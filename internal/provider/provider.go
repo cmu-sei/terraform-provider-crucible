@@ -19,7 +19,7 @@ func Provider() *schema.Provider {
 			"crucible_player_application_template": applicationTemplate(),
 			"crucible_player_user":                 user(),
 			"crucible_vlan":                        casterVlan(),
-			"crucible_view_network":                viewNetwork(),
+			"crucible_player_view_network":          playerViewNetwork(),
 		},
 		Schema: map[string]*schema.Schema{
 			"username": {

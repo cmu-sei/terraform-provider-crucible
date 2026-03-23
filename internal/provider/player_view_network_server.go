@@ -15,12 +15,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 )
 
-func viewNetwork() *schema.Resource {
+func playerViewNetwork() *schema.Resource {
 	return &schema.Resource{
-		Create: viewNetworkCreate,
-		Read:   viewNetworkRead,
-		Update: viewNetworkUpdate,
-		Delete: viewNetworkDelete,
+		Create: playerViewNetworkCreate,
+		Read:   playerViewNetworkRead,
+		Update: playerViewNetworkUpdate,
+		Delete: playerViewNetworkDelete,
 
 		Schema: map[string]*schema.Schema{
 			"view_id": {
@@ -56,7 +56,7 @@ func viewNetwork() *schema.Resource {
 	}
 }
 
-func viewNetworkCreate(d *schema.ResourceData, m interface{}) error {
+func playerViewNetworkCreate(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
 		return fmt.Errorf("error configuring provider")
 	}
@@ -83,10 +83,10 @@ func viewNetworkCreate(d *schema.ResourceData, m interface{}) error {
 	d.SetId(result.ID)
 
 	log.Printf("! ViewNetwork created with ID %s", d.Id())
-	return viewNetworkRead(d, m)
+	return playerViewNetworkRead(d, m)
 }
 
-func viewNetworkRead(d *schema.ResourceData, m interface{}) error {
+func playerViewNetworkRead(d *schema.ResourceData, m interface{}) error {
 	id := d.Id()
 	casted := m.(map[string]string)
 	viewID := d.Get("view_id").(string)
@@ -140,7 +140,7 @@ func viewNetworkRead(d *schema.ResourceData, m interface{}) error {
 	return nil
 }
 
-func viewNetworkUpdate(d *schema.ResourceData, m interface{}) error {
+func playerViewNetworkUpdate(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
 		return fmt.Errorf("error configuring provider")
 	}
@@ -165,10 +165,10 @@ func viewNetworkUpdate(d *schema.ResourceData, m interface{}) error {
 		return err
 	}
 
-	return viewNetworkRead(d, m)
+	return playerViewNetworkRead(d, m)
 }
 
-func viewNetworkDelete(d *schema.ResourceData, m interface{}) error {
+func playerViewNetworkDelete(d *schema.ResourceData, m interface{}) error {
 	if m == nil {
 		return fmt.Errorf("error configuring provider")
 	}

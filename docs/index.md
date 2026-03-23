@@ -14,8 +14,8 @@ The Crucible provider enables [Terraform](https://www.terraform.io/) to manage r
 - [`crucible_player_view`](resources/player_view.md) — Manage views, teams, and applications in the Player API
 - [`crucible_player_application_template`](resources/player_application_template.md) — Manage application templates in the Player API
 - [`crucible_player_user`](resources/player_user.md) — Manage users in the Player API
+- [`crucible_player_view_network`](resources/player_view_network.md) — Manage allowed team networks in the VM API
 - [`crucible_vlan`](resources/vlan.md) — Acquire and release VLANs in the Caster API
-- [`crucible_view_network`](resources/view_network.md) — Manage allowed team networks in the VM API
 
 ## Authentication
 
