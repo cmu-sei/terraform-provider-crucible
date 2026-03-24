@@ -1,17 +1,17 @@
 ---
-page_title: "crucible_view_network Resource"
+page_title: "crucible_player_view_network Resource"
 description: |-
   Manages a network entry within a view in the Crucible VM API.
 ---
 
-# crucible_view_network
+# crucible_player_view_network
 
 Manages allowed network entries for a view in Crucible's VM API. View networks control which teams can access specific virtual networks, scoped by provider type and instance.
 
 ## Example Usage
 
 ```hcl
-resource "crucible_view_network" "example" {
+resource "crucible_player_view_network" "example" {
   view_id              = var.view_id
   provider_type        = "Vsphere"
   provider_instance_id = var.vcenter
