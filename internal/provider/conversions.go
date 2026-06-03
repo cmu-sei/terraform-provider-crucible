@@ -26,16 +26,42 @@ func boolStaticTrue() defaults.Bool {
 	return booldefault.StaticBool(true)
 }
 
-// computedStringWithUseState builds a computed, optional string attribute that
-// preserves its prior-state value when the configuration omits it. Used for
-// API-assigned identifiers within nested blocks.
+// computedStringWithUseState builds a Computed-only string attribute for an
+// API-assigned identifier within a nested block (app_id, v_id, team_id,
+// app_instance id). It carries the prior-state value forward when present, and
+// otherwise plans as unknown.
+//
+// The unknownIfNull modifier is required in addition to UseStateForUnknown:
+// when a new element is added to a ListNestedBlock on update, there is no prior
+// state to carry, and the framework would otherwise plan the computed id as
+// null. The API then assigns a real id, producing a "provider produced
+// inconsistent result" error. Forcing unknown lets the API fill it.
 func computedStringWithUseState() schema.StringAttribute {
 	return schema.StringAttribute{
-		Optional: true,
 		Computed: true,
 		PlanModifiers: []planmodifier.String{
 			stringplanmodifier.UseStateForUnknown(),
+			unknownIfNull{},
 		},
+	}
+}
+
+// unknownIfNull is a plan modifier that marks a computed attribute as unknown
+// when its planned value would otherwise be null. Used for API-assigned ids in
+// nested blocks where a newly added element has no prior state to carry.
+type unknownIfNull struct{}
+
+func (unknownIfNull) Description(_ context.Context) string {
+	return "Marks the value unknown when it would otherwise plan as null."
+}
+
+func (m unknownIfNull) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (unknownIfNull) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if resp.PlanValue.IsNull() {
+		resp.PlanValue = types.StringUnknown()
 	}
 }
 

@@ -5,7 +5,6 @@ package provider_test
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,7 +36,7 @@ func TestAccEmptyView(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				// Create resource and check
-				Config: configViewEmpty,
+				Config: correctCreds + configViewEmpty,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.empty", emptyViewExpected),
 					testAccVerifyRemoteView(emptyViewExpected),
@@ -45,7 +44,7 @@ func TestAccEmptyView(t *testing.T) {
 			},
 			{
 				// Update resource and check
-				Config: configViewEmptyUpdated,
+				Config: correctCreds + configViewEmptyUpdated,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.empty", emptyViewExpectedUpdated),
 					testAccVerifyRemoteView(&structs.ViewInfo{
@@ -79,14 +78,14 @@ func TestAccViewWithApps(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: configViewApps,
+				Config: correctCreds + configViewApps,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.apps", appsViewExpected),
 					testAccVerifyRemoteView(appsViewExpected),
 				),
 			},
 			{
-				Config: configViewAppsUpdated,
+				Config: correctCreds + configViewAppsUpdated,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.apps", appsViewExpectedUpdated),
 					testAccVerifyRemoteView(appsViewExpectedUpdated),
@@ -108,13 +107,13 @@ func TestAccViewWithTeams(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: configViewTeams,
+				Config: correctCreds + configViewTeams,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.teams", teamViewExpected),
 					testAccVerifyRemoteView(teamViewExpected)),
 			},
 			{
-				Config: configViewTeamsUpdated,
+				Config: correctCreds + configViewTeamsUpdated,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.teams", teamViewExpectedUpdated),
 					testAccVerifyRemoteView(teamViewExpectedUpdated)),
@@ -135,14 +134,14 @@ func TestAccViewWithUsers(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: configViewUsers,
+				Config: correctCreds + configViewUsers,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.users", userViewExpected),
 					testAccVerifyRemoteView(userViewExpected),
 				),
 			},
 			{
-				Config: configViewUsersUpdated,
+				Config: correctCreds + configViewUsersUpdated,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.users", userViewExpectedUpdated),
 					testAccVerifyRemoteView(userViewExpectedUpdated),
@@ -165,23 +164,23 @@ func TestAccViewInstances(t *testing.T) {
 		Steps: []resource.TestStep{
 			// View with 2 app instances
 			{
-				Config: configViewInstances,
+				Config: correctCreds + configViewInstances,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpected),
 					testAccVerifyRemoteView(instanceViewExpected),
 				),
 			},
-			// Remove the app instances
+			// Remove the app instances (same resource, updated in place).
 			{
-				Config: configViewUsers,
+				Config: correctCreds + configViewInstancesNoInst,
 				Check: resource.ComposeTestCheckFunc(
-					testAccVerifyLocalView("crucible_player_view.users", userViewExpected),
+					testAccVerifyLocalView("crucible_player_view.instances", userViewExpected),
 					testAccVerifyRemoteView(userViewExpected),
 				),
 			},
 			// Add them back
 			{
-				Config: configViewInstances,
+				Config: correctCreds + configViewInstances,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpected),
 					testAccVerifyRemoteView(instanceViewExpected),
@@ -189,7 +188,7 @@ func TestAccViewInstances(t *testing.T) {
 			},
 			// Update the instances
 			{
-				Config: configViewInstancesUpdated,
+				Config: correctCreds + configViewInstancesUpdated,
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpectedUpdated),
 					testAccVerifyRemoteView(instanceViewExpectedUpdated),
@@ -217,6 +216,22 @@ func testAccViewDestroyed(s *terraform.State) error {
 		}
 	}
 	return nil
+}
+
+// ifaceToStateString renders an application's string-or-bool attribute the way
+// it appears in Terraform state: "null" when absent, the string verbatim, or a
+// "true"/"false" rendering of a bool.
+func ifaceToStateString(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return "null"
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }
 
 func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.TestCheckFunc {
@@ -261,19 +276,11 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 					appIcon = app.Icon.(string)
 				}
 
-				var appEmbed string
-				if app.Embeddable == nil {
-					appEmbed = "null"
-				} else {
-					appEmbed = strconv.FormatBool(app.Embeddable.(bool))
-				}
-
-				var appLoad string
-				if app.LoadInBackground == nil {
-					appLoad = "null"
-				} else {
-					appLoad = strconv.FormatBool(app.LoadInBackground.(bool))
-				}
+				// embeddable / load_in_background are string-typed attributes on
+				// the application block, so the fixtures carry string values.
+				// Accept either a string or a bool to be safe.
+				appEmbed := ifaceToStateString(app.Embeddable)
+				appLoad := ifaceToStateString(app.LoadInBackground)
 
 				var appTemplate string
 				if app.AppTemplateID == nil {
@@ -282,11 +289,18 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 					appTemplate = app.AppTemplateID.(string)
 				}
 
-				// View ID field is not checked b/c it is impossible to know at compile time, so we cannot provide an expected value
-				if localView[id] != app.ID || localView[templateId] != appTemplate ||
+				// app_id and the view id are server-assigned and unknowable at
+				// compile time, so they are not compared against a fixed expected
+				// value; we only assert app_id is populated in state.
+				if localView[id] == "" || localView[id] == "null" {
+					return fmt.Errorf("local state of application %d has no app_id", i)
+				}
+				if localView[templateId] != appTemplate ||
 					localView[icon] != appIcon || localView[load] != appLoad || localView[name] != appName || localView[url] != appURL ||
 					localView[embed] != appEmbed {
-					return fmt.Errorf("local state of application %d does not match expected", i)
+					return fmt.Errorf("local state of application %d does not match expected:\n  template: got %q want %q\n  icon: got %q want %q\n  load: got %q want %q\n  name: got %q want %q\n  url: got %q want %q\n  embed: got %q want %q",
+						i, localView[templateId], appTemplate, localView[icon], appIcon,
+						localView[load], appLoad, localView[name], appName, localView[url], appURL, localView[embed], appEmbed)
 				}
 
 			}
@@ -298,7 +312,7 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 
 			for i, team := range view.Teams {
 				name := "team." + strconv.Itoa(i) + ".name"
-				role := "team." + strconv.Itoa(i) + ".role_id"
+				role := "team." + strconv.Itoa(i) + ".role"
 				// Handle permissions
 				for j, perm := range team.Permissions {
 					locPerm := "team." + strconv.Itoa(i) + ".permissions." + strconv.Itoa(j)
@@ -320,7 +334,7 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 				// Handle users
 				for j, user := range team.Users {
 					locID := "team." + strconv.Itoa(i) + ".user." + strconv.Itoa(j) + ".user_id"
-					locRole := "team." + strconv.Itoa(i) + ".user." + strconv.Itoa(j) + ".role_id"
+					locRole := "team." + strconv.Itoa(i) + ".user." + strconv.Itoa(j) + ".role"
 
 					userRoleExpected := util.Ternary(user.Role == nil, "null", user.Role)
 
@@ -386,11 +400,14 @@ func testAccVerifyRemoteView(view *structs.ViewInfo) resource.TestCheckFunc {
 			return fmt.Errorf("remote state does not equal expected for view itself")
 		}
 
-		// Check equality on app fields
+		// Check equality on app fields. The app ID is server-assigned, so it is
+		// not compared. embeddable/load_in_background may come back as a bool from
+		// the API while the fixtures use strings, so normalize both sides.
 		for i, app := range view.Applications {
-			if remote.Applications[i].ID != app.ID || remote.Applications[i].Name != app.Name ||
+			if remote.Applications[i].Name != app.Name ||
 				remote.Applications[i].URL != app.URL || remote.Applications[i].Icon != app.Icon ||
-				remote.Applications[i].Embeddable != app.Embeddable || remote.Applications[i].LoadInBackground != app.LoadInBackground {
+				ifaceToStateString(remote.Applications[i].Embeddable) != ifaceToStateString(app.Embeddable) ||
+				ifaceToStateString(remote.Applications[i].LoadInBackground) != ifaceToStateString(app.LoadInBackground) {
 				return fmt.Errorf("expected does not equal actual remote state for application %d", i)
 			}
 		}
@@ -413,28 +430,80 @@ func testAccVerifyRemoteView(view *structs.ViewInfo) resource.TestCheckFunc {
 		}
 
 		for i, team := range remote.Teams {
-			if team.Name != view.Teams[i].Name || team.Role != view.Teams[i].Role ||
-				!reflect.DeepEqual(team.Permissions, view.Teams[i].Permissions) {
+			// Permissions come back from the API in arbitrary order; compare as
+			// sets. The team Role is resolved to a name by ReadView.
+			if ifaceString(team.Name) != ifaceString(view.Teams[i].Name) || ifaceString(team.Role) != ifaceString(view.Teams[i].Role) ||
+				!sameStringSet(team.Permissions, view.Teams[i].Permissions) {
 				return fmt.Errorf("expected does not equal actual remote state for team %d", i)
 			}
 
-			// Check user equality
-			for j, user := range team.Users {
-				expectedRole := util.Ternary(view.Teams[i].Users[j].Role == nil, "", view.Teams[i].Users[j].Role)
-				if user.ID != view.Teams[i].Users[j].ID || user.Role != expectedRole {
+			// Check user equality. Order the remote users to match the expected
+			// (configured) order by id so the comparison is position-independent.
+			expectedUsers := view.Teams[i].Users
+			remoteUsers := append([]structs.UserInfo{}, team.Users...)
+			expectRank := map[string]int{}
+			for k, u := range expectedUsers {
+				expectRank[u.ID] = k
+			}
+			sort.SliceStable(remoteUsers, func(a, b int) bool {
+				return expectRank[remoteUsers[a].ID] < expectRank[remoteUsers[b].ID]
+			})
+			for j, user := range remoteUsers {
+				if user.ID != expectedUsers[j].ID || ifaceString(user.Role) != ifaceString(expectedUsers[j].Role) {
 					return fmt.Errorf("expected does not equal actual remote state for user %d of team %d", j, i)
 				}
 			}
 
-			// Check instance equality
-			for j, inst := range team.AppInstances {
-				if inst.Name != view.Teams[i].AppInstances[j].Name || inst.DisplayOrder != view.Teams[i].AppInstances[j].DisplayOrder {
+			// Check instance equality (order-independent by name).
+			expectedInsts := view.Teams[i].AppInstances
+			remoteInsts := append([]structs.AppInstance{}, team.AppInstances...)
+			instRank := map[string]int{}
+			for k, in := range expectedInsts {
+				instRank[in.Name] = k
+			}
+			sort.SliceStable(remoteInsts, func(a, b int) bool {
+				return instRank[remoteInsts[a].Name] < instRank[remoteInsts[b].Name]
+			})
+			for j, inst := range remoteInsts {
+				if inst.Name != expectedInsts[j].Name || inst.DisplayOrder != expectedInsts[j].DisplayOrder {
 					return fmt.Errorf("expected does not equal actual remote state for app instance %d of team %d", j, i)
 				}
 			}
 		}
 		return nil
 	}
+}
+
+// ifaceString coerces a nil-or-string interface into a string.
+func ifaceString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// sameStringSet reports whether two string slices contain the same elements,
+// ignoring order.
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, s := range a {
+		counts[s]++
+	}
+	for _, s := range b {
+		counts[s]--
+	}
+	for _, c := range counts {
+		if c != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func getLocalState(s *terraform.State) map[string]string {

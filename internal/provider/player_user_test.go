@@ -5,7 +5,6 @@ package provider_test
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
@@ -18,14 +17,12 @@ import (
 // crucible_player_user resource.
 //
 // A crucible_player_user binds an existing identity-provider user (by GUID) into
-// Player, so the test requires a real user id supplied via TF_TEST_USER_ID. The
-// two roles default to the standard Player roles but can be overridden with
-// TF_TEST_USER_ROLE / TF_TEST_USER_ROLE_UPDATED.
+// Player. The user id defaults to the crucible-development admin GUID and can be
+// overridden with TF_TEST_USER_ID. The two roles default to standard Player
+// roles, overridable with TF_TEST_USER_ROLE / TF_TEST_USER_ROLE_UPDATED.
 func TestAccPlayerUser(t *testing.T) {
-	userID := os.Getenv("TF_TEST_USER_ID")
-	if userID == "" {
-		t.Skip("TF_TEST_USER_ID not set; skipping crucible_player_user acceptance test")
-	}
+	// TF_TEST_USER_ID defaults to the crucible-development admin user GUID.
+	userID := testEnv("TF_TEST_USER_ID")
 	role := envOrDefault("TF_TEST_USER_ROLE", "Administrator")
 	roleUpdated := envOrDefault("TF_TEST_USER_ROLE_UPDATED", "Content Developer")
 
@@ -106,12 +103,4 @@ func testAccUserDestroyed(userID string) resource.TestCheckFunc {
 		}
 		return nil
 	}
-}
-
-// envOrDefault returns the environment variable value or a fallback when unset.
-func envOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

@@ -17,6 +17,13 @@ This project uses [Task](https://taskfile.dev/) for build automation. Run `task`
 
 `task install` writes a dev override file to `~/.terraform.d/crucible-dev.tfrc` that points Terraform at the locally built binary. Run `task uninstall` to revert.
 
+### Running tests
+
+- `task test` — fast unit/compile check. Acceptance steps are skipped unless `TF_ACC` is set.
+- `task testacc` — full acceptance suite against a live Crucible stack (sets `TF_ACC=1`).
+
+The connection settings and `TF_TEST_USER_ID` default to the local [crucible-development](https://github.com/cmu-sei/crucible) Aspire stack, so with that stack running `task testacc` works out of the box. Override the `TF_*` variables only when targeting another environment. The one value you must supply is `TF_TEST_PROJECT_ID` (a Caster project GUID) to exercise `crucible_vlan` — that test skips without it. Set `TF_TEST_UPGRADE=1` to additionally run the old→new provider upgrade tests (these download the published provider, so they need Terraform Registry access). Run `task` to see the full variable list.
+
 ## Reporting bugs and requesting features
 
 Think you found a bug? Please report all Crucible bugs — including bugs for the individual Crucible apps — in the [cmu-sei/crucible issue tracker](https://github.com/cmu-sei/crucible/issues).

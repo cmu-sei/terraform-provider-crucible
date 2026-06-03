@@ -32,7 +32,7 @@ func TestAccAppTemplate(t *testing.T) {
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.test"),
 		Steps: []resource.TestStep{
 			{
-				Config: configAppTemplate,
+				Config: correctCreds + configAppTemplate,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "name", "TestTemplate"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "url", "http://example.com"),
@@ -44,7 +44,7 @@ func TestAccAppTemplate(t *testing.T) {
 				),
 			},
 			{
-				Config: configAppTemplateUpdated,
+				Config: correctCreds + configAppTemplateUpdated,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "name", "TestTemplateUpdated"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "url", "http://example.com"),
@@ -65,17 +65,22 @@ func TestAccAppTemplate(t *testing.T) {
 }
 
 // testAccTemplateDestroyed asserts the application template no longer exists.
+//
+// The Player API returns 200 with an empty body for a missing template (rather
+// than 404), so AppTemplateExists can't distinguish a deleted template. Instead
+// read it back: a deleted template yields an error (empty body fails to decode)
+// or a zero-valued struct (empty name).
 func testAccTemplateDestroyed(res string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[res]
 		if !ok {
 			return nil
 		}
-		exists, err := api.AppTemplateExists(rs.Primary.ID, getMap())
+		tmpl, err := api.AppTemplateRead(rs.Primary.ID, getMap())
 		if err != nil {
-			return fmt.Errorf("error checking destroyed template %s: %w", rs.Primary.ID, err)
+			return nil
 		}
-		if exists {
+		if tmpl != nil && tmpl.Name != "" {
 			return fmt.Errorf("template %s still exists after destroy", rs.Primary.ID)
 		}
 		return nil

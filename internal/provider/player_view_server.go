@@ -385,21 +385,41 @@ func (r *viewResource) read(ctx context.Context, m *viewModel) diag.Diagnostics 
 	m.Description = types.StringValue(view.Description)
 	m.Status = types.StringValue(view.Status)
 
-	// Sort teams, and the users/instances within each, for stable state.
-	sort.Slice(view.Teams, func(i, j int) bool {
-		return ifaceStr(view.Teams[i].Name) < ifaceStr(view.Teams[j].Name)
+	// Order applications and teams to match the order already present in the
+	// model (the plan during create/update, or prior state during read). The
+	// framework requires the post-apply order of a ListNestedBlock to match the
+	// configured order, so we must NOT impose an independent (e.g. alphabetical)
+	// sort here. Names not present in the model sort to the end, alphabetically,
+	// for a stable result.
+	appRank := blockNameRank(ctx, m.Application)
+	teamRank := blockNameRank(ctx, m.Team)
+	sort.SliceStable(view.Applications, func(i, j int) bool {
+		return nameLess(ifaceStr(view.Applications[i].Name), ifaceStr(view.Applications[j].Name), appRank)
 	})
+	sort.SliceStable(view.Teams, func(i, j int) bool {
+		return nameLess(ifaceStr(view.Teams[i].Name), ifaceStr(view.Teams[j].Name), teamRank)
+	})
+
+	// Users and app instances are themselves ListNestedBlocks, so their order
+	// must also match the configured order. Reorder each team's users (by
+	// user_id) and app instances (by name) to the order found in the model team
+	// of the same name; anything not in the model sorts to the end.
+	userRanks, instRanks, permRanks := teamChildRanks(ctx, m.Team)
 	for _, team := range view.Teams {
-		sort.Slice(team.Users, func(i, j int) bool {
-			return team.Users[i].ID < team.Users[j].ID
+		tn := ifaceStr(team.Name)
+		uRank := userRanks[tn]
+		iRank := instRanks[tn]
+		pRank := permRanks[tn]
+		sort.SliceStable(team.Users, func(i, j int) bool {
+			return nameLess(team.Users[i].ID, team.Users[j].ID, uRank)
 		})
-		sort.Slice(team.AppInstances, func(i, j int) bool {
-			return team.AppInstances[i].Name < team.AppInstances[j].Name
+		sort.SliceStable(team.AppInstances, func(i, j int) bool {
+			return nameLess(team.AppInstances[i].Name, team.AppInstances[j].Name, iRank)
+		})
+		sort.SliceStable(team.Permissions, func(i, j int) bool {
+			return nameLess(team.Permissions[i], team.Permissions[j], pRank)
 		})
 	}
-	sort.Slice(view.Applications, func(i, j int) bool {
-		return ifaceStr(view.Applications[i].Name) < ifaceStr(view.Applications[j].Name)
-	})
 
 	// Applications.
 	appObjType := types.ObjectType{AttrTypes: viewAppAttrTypes}
@@ -430,6 +450,127 @@ func (r *viewResource) read(ctx context.Context, m *viewModel) diag.Diagnostics 
 	m.Team = teamList
 
 	return diags
+}
+
+// blockNameRank maps each nested block's "name" attribute to its index within
+// the given list, so API results can be reordered to match the configured
+// (model) block order. A null/unknown list yields an empty map.
+func blockNameRank(_ context.Context, list types.List) map[string]int {
+	rank := map[string]int{}
+	if list.IsNull() || list.IsUnknown() {
+		return rank
+	}
+	for i, elem := range list.Elements() {
+		obj, ok := elem.(types.Object)
+		if !ok {
+			continue
+		}
+		nameAttr, ok := obj.Attributes()["name"]
+		if !ok {
+			continue
+		}
+		nameStr, ok := nameAttr.(types.String)
+		if !ok || nameStr.IsNull() || nameStr.IsUnknown() {
+			continue
+		}
+		if _, seen := rank[nameStr.ValueString()]; !seen {
+			rank[nameStr.ValueString()] = i
+		}
+	}
+	return rank
+}
+
+// teamChildRanks extracts, for each team (keyed by team name) in the model, the
+// configured order of its users (keyed by user_id) and app instances (keyed by
+// name). Used to reorder API results to match the configured block order.
+func teamChildRanks(_ context.Context, teams types.List) (map[string]map[string]int, map[string]map[string]int, map[string]map[string]int) {
+	users := map[string]map[string]int{}
+	insts := map[string]map[string]int{}
+	perms := map[string]map[string]int{}
+	if teams.IsNull() || teams.IsUnknown() {
+		return users, insts, perms
+	}
+	for _, elem := range teams.Elements() {
+		team, ok := elem.(types.Object)
+		if !ok {
+			continue
+		}
+		attrs := team.Attributes()
+		nameAttr, _ := attrs["name"].(types.String)
+		if nameAttr.IsNull() || nameAttr.IsUnknown() {
+			continue
+		}
+		teamName := nameAttr.ValueString()
+
+		if userList, ok := attrs["user"].(types.List); ok {
+			users[teamName] = childRankByAttr(userList, "user_id")
+		}
+		if instList, ok := attrs["app_instance"].(types.List); ok {
+			insts[teamName] = childRankByAttr(instList, "name")
+		}
+		if permList, ok := attrs["permissions"].(types.List); ok {
+			perms[teamName] = stringListRank(permList)
+		}
+	}
+	return users, insts, perms
+}
+
+// stringListRank maps each string element of a list to its index.
+func stringListRank(list types.List) map[string]int {
+	rank := map[string]int{}
+	if list.IsNull() || list.IsUnknown() {
+		return rank
+	}
+	for i, elem := range list.Elements() {
+		s, ok := elem.(types.String)
+		if !ok || s.IsNull() || s.IsUnknown() {
+			continue
+		}
+		if _, seen := rank[s.ValueString()]; !seen {
+			rank[s.ValueString()] = i
+		}
+	}
+	return rank
+}
+
+// childRankByAttr maps the given string attribute of each object in list to its
+// index within the list.
+func childRankByAttr(list types.List, attrName string) map[string]int {
+	rank := map[string]int{}
+	if list.IsNull() || list.IsUnknown() {
+		return rank
+	}
+	for i, elem := range list.Elements() {
+		obj, ok := elem.(types.Object)
+		if !ok {
+			continue
+		}
+		v, ok := obj.Attributes()[attrName].(types.String)
+		if !ok || v.IsNull() || v.IsUnknown() {
+			continue
+		}
+		if _, seen := rank[v.ValueString()]; !seen {
+			rank[v.ValueString()] = i
+		}
+	}
+	return rank
+}
+
+// nameLess orders two block names by their position in rank (configured order
+// first); names absent from rank sort after ranked names, alphabetically.
+func nameLess(a, b string, rank map[string]int) bool {
+	ra, aok := rank[a]
+	rb, bok := rank[b]
+	switch {
+	case aok && bok:
+		return ra < rb
+	case aok:
+		return true
+	case bok:
+		return false
+	default:
+		return a < b
+	}
 }
 
 // ------------ Conversion helpers (framework <-> native maps) ------------
@@ -960,6 +1101,15 @@ func updateInstances(old, current *[]*structs.TeamInfo, apps []interface{}, m ma
 					}
 				}
 				if found && (old.Name != currInst.Name || old.DisplayOrder != currInst.DisplayOrder) {
+					// Resolve the parent application GUID by name; the plan-derived
+					// instance does not carry Parent, and UpdateAppInstance sends it
+					// as applicationId (an empty value yields a 500).
+					for _, app := range apps {
+						asMap := app.(map[string]interface{})
+						if asMap["name"] == currInst.Name {
+							currInst.Parent = asMap["app_id"].(string)
+						}
+					}
 					if err := api.UpdateAppInstance(currInst, oldTeam.ID.(string), m); err != nil {
 						return err
 					}

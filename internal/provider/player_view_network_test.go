@@ -17,14 +17,15 @@ import (
 // crucible_player_view_network resource. A view is created inline to supply the
 // required view_id, so the test only needs the standard Player credentials.
 //
-// provider_instance_id / network_id reference real infrastructure objects; they
-// default to placeholder values and can be overridden with
-// TF_TEST_NETWORK_PROVIDER_INSTANCE_ID / TF_TEST_NETWORK_ID. provider_type
-// defaults to "Unknown" (override with TF_TEST_NETWORK_PROVIDER_TYPE).
+// provider_instance_id / network_id are free-form strings identifying the
+// backing provider instance and network. With provider_type "Unknown" the dev
+// stack accepts arbitrary placeholder strings, so the test runs by default;
+// override with TF_TEST_NETWORK_PROVIDER_INSTANCE_ID / TF_TEST_NETWORK_ID /
+// TF_TEST_NETWORK_PROVIDER_TYPE for a real provider instance.
 func TestAccViewNetwork(t *testing.T) {
 	providerType := envOrDefault("TF_TEST_NETWORK_PROVIDER_TYPE", "Unknown")
-	instanceID := envOrDefault("TF_TEST_NETWORK_PROVIDER_INSTANCE_ID", "00000000-0000-0000-0000-000000000001")
-	networkID := envOrDefault("TF_TEST_NETWORK_ID", "00000000-0000-0000-0000-000000000002")
+	instanceID := envOrDefault("TF_TEST_NETWORK_PROVIDER_INSTANCE_ID", "acc-test-instance")
+	networkID := envOrDefault("TF_TEST_NETWORK_ID", "acc-test-network")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -54,11 +55,14 @@ func TestAccViewNetwork(t *testing.T) {
 }
 
 func viewNetworkConfig(providerType, instanceID, networkID, name string) string {
+	// create_admin_team must be true: the view network is created with the
+	// provider's own credentials, and the VM API requires the caller to be a
+	// view admin (otherwise it returns 403 Insufficient Permissions).
 	return fmt.Sprintf(`resource "crucible_player_view" "net_parent" {
 		name              = "acc-test-net-view"
 		description       = "view for view_network acceptance test"
 		status            = "Active"
-		create_admin_team = false
+		create_admin_team = true
 	}
 
 	resource "crucible_player_view_network" "test" {

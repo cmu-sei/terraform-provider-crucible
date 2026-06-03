@@ -13,20 +13,25 @@ tasks:
 
   testacc:
     desc: |
-      Run acceptance tests against a live Crucible stack. Requires TF_ACC=1 and
-      the TF_* environment variables below (Player, VM and Caster APIs reachable).
-      Resource-specific tests skip themselves when their TF_TEST_* id is unset.
-        Provider creds : TF_PROV_NAME=crucible TF_USERNAME TF_PASSWORD TF_AUTH_URL
+      Run acceptance tests against a live Crucible stack (TF_ACC=1 is set here).
+      Connection settings and TF_TEST_USER_ID DEFAULT to the local
+      crucible-development Aspire stack, so with that stack running the suite
+      works out of the box. Override any of these only for other environments:
+        Provider creds : TF_PROV_NAME TF_USERNAME TF_PASSWORD TF_AUTH_URL
                          TF_TOK_URL TF_CLIENT_ID TF_CLIENT_SECRET
         Endpoints      : TF_PLAYER_API_URL TF_VM_API_URL TF_CASTER_API_URL
-        Per-resource   : TF_TEST_USER_ID (player_user)
-                         TF_TEST_PROJECT_ID (vlan)
-                         TF_TEST_NETWORK_PROVIDER_INSTANCE_ID / TF_TEST_NETWORK_ID (view_network, optional)
-        Upgrade tests  : TF_TEST_UPGRADE=1 (also needs Registry network access)
+        Defaulted id   : TF_TEST_USER_ID (player_user; dev admin GUID)
+                         TF_TEST_NETWORK_* (view_network; placeholder strings)
+      Must be supplied (no dev default):
+        TF_TEST_PROJECT_ID  - Caster project GUID; crucible_vlan skips without it
+      Opt-in:
+        TF_TEST_UPGRADE=1   - old->new upgrade tests (also needs Registry access)
     env:
       TF_ACC: "1"
     cmds:
-      - go test -v ./internal/provider/... -timeout 60m
+      # -count=1 disables Go's test result cache so the live API is hit on every
+      # run (otherwise an unchanged build prints a cached "ok" without running).
+      - go test -v -count=1 ./internal/provider/... -timeout 60m
 
   clean:
     desc: Remove build artifacts
