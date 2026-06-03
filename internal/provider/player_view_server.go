@@ -200,7 +200,11 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 										Required: true,
 									},
 									"role": schema.StringAttribute{
+										// Optional+Computed: the API echoes an empty
+										// role ("") when one isn't configured, so the
+										// provider must be allowed to set it.
 										Optional: true,
+										Computed: true,
 									},
 								},
 							},
@@ -636,7 +640,9 @@ func ifaceStr(v interface{}) string {
 // native []interface{} slices (rather than *schema.ResourceData) and to leave
 // state reconciliation to the resource's read() method.
 
-// createApps creates the apps specified in the configuration.
+// createApps creates the apps specified in the configuration. The server-
+// assigned application IDs are written back into the app_id field of each entry
+// in apps so that createTeams can resolve app_instance parents to real IDs.
 func createApps(viewID string, m map[string]string, apps []interface{}) error {
 	appStructs := new([]*structs.AppInfo)
 	for _, app := range apps {
@@ -652,7 +658,18 @@ func createApps(viewID string, m map[string]string, apps []interface{}) error {
 		*appStructs = append(*appStructs, curr)
 	}
 
-	return api.CreateApps(appStructs, m, viewID)
+	if err := api.CreateApps(appStructs, m, viewID); err != nil {
+		return err
+	}
+
+	// api.CreateApps overwrites each struct's ID with the server-assigned GUID.
+	// Propagate those back into the shared apps slice (built 1:1 and in order)
+	// so the app_instance parent lookup in createTeams uses real IDs.
+	for i, app := range apps {
+		app.(map[string]interface{})["app_id"] = (*appStructs)[i].ID
+	}
+
+	return nil
 }
 
 // createTeams creates the teams specified in the configuration.
