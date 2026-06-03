@@ -4,139 +4,177 @@
 package provider
 
 import (
+	"context"
 	"os"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/provider"
+	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// Provider returns an instance of the provider
-func Provider() *schema.Provider {
-	return &schema.Provider{
-		ResourcesMap: map[string]*schema.Resource{
-			"crucible_player_virtual_machine":      playerVirtualMachine(),
-			"crucible_player_view":                 playerView(),
-			"crucible_player_application_template": applicationTemplate(),
-			"crucible_player_user":                 user(),
-			"crucible_vlan":                        casterVlan(),
-			"crucible_player_view_network":          playerViewNetwork(),
-		},
-		Schema: map[string]*schema.Schema{
-			"username": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_USERNAME"), nil
-				},
-			},
-			"password": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_PASSWORD"), nil
-				},
-			},
-			"auth_url": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_AUTH_URL"), nil
-				},
-			},
-			"token_url": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_TOK_URL"), nil
-				},
-			},
-			"vm_api_url": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_VM_API_URL"), nil
-				},
-			},
-			"player_api_url": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_PLAYER_API_URL"), nil
-				},
-			},
-			"caster_api_url": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_CASTER_API_URL"), nil
-				},
-			},
-			"client_id": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_CLIENT_ID"), nil
-				},
-			},
-			"client_secret": {
-				Type:     schema.TypeString,
-				Required: true,
-				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_CLIENT_SECRET"), nil
-				},
-			},
-			"client_scopes": {
-				Type: schema.TypeList,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-				Optional: true,
-				DefaultFunc: func() (interface{}, error) {
-					if val := os.Getenv("SEI_CRUCIBLE_CLIENT_SCOPES"); val != "" {
-						return val, nil
-					}
-					return []interface{}{}, nil // Return an empty list if the environment variable is not set
-				},
-			},
-		},
-		ConfigureFunc: config,
+// Ensure crucibleProvider satisfies the provider.Provider interface.
+var _ provider.Provider = &crucibleProvider{}
+
+// crucibleProvider is the provider implementation.
+type crucibleProvider struct {
+	// version is set to the provider version on release, "dev" when the
+	// provider is built and ran locally, and "test" during acceptance testing.
+	version string
+}
+
+// crucibleProviderModel maps provider schema data to a Go type.
+type crucibleProviderModel struct {
+	Username     types.String `tfsdk:"username"`
+	Password     types.String `tfsdk:"password"`
+	AuthURL      types.String `tfsdk:"auth_url"`
+	TokenURL     types.String `tfsdk:"token_url"`
+	VMAPIURL     types.String `tfsdk:"vm_api_url"`
+	PlayerAPIURL types.String `tfsdk:"player_api_url"`
+	CasterAPIURL types.String `tfsdk:"caster_api_url"`
+	ClientID     types.String `tfsdk:"client_id"`
+	ClientSecret types.String `tfsdk:"client_secret"`
+	ClientScopes types.List   `tfsdk:"client_scopes"`
+}
+
+// New returns a function that creates a new instance of the provider with the
+// given version.
+func New(version string) func() provider.Provider {
+	return func() provider.Provider {
+		return &crucibleProvider{
+			version: version,
+		}
 	}
 }
 
-// This will read in the key-value pairs supplied in the provider block of the config file.
-// The map that is returned can be accessed in the CRUD functions in a _server.go file via the m parameter.
-func config(r *schema.ResourceData) (interface{}, error) {
-	user := r.Get("username")
-	pass := r.Get("password")
-	auth := r.Get("auth_url")
-	playerTok := r.Get("token_url")
-	vmAPI := r.Get("vm_api_url")
-	playerAPI := r.Get("player_api_url")
-	casterAPI := r.Get("caster_api_url")
-	id := r.Get("client_id")
-	sec := r.Get("client_secret")
-	scopesInterface := r.Get("client_scopes").([]interface{})
-	scopesList := make([]string, len(scopesInterface))
-	for i, v := range scopesInterface {
-		scopesList[i] = v.(string) // Convert each item to string
-	}
-	scopes := strings.Join(scopesList, ",")
+// Metadata returns the provider type name.
+func (p *crucibleProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
+	resp.TypeName = "crucible"
+	resp.Version = p.version
+}
 
-	if user == nil || pass == nil || auth == nil || playerTok == nil || vmAPI == nil || id == nil || sec == nil ||
-		playerAPI == nil || casterAPI == nil || scopesInterface == nil {
-		return nil, nil
+// Schema defines the provider-level configuration schema.
+func (p *crucibleProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			// All attributes are Optional because each falls back to a
+			// SEI_CRUCIBLE_* environment variable in Configure, preserving the
+			// DefaultFunc behavior of the previous SDKv1 implementation.
+			"username": schema.StringAttribute{
+				Optional: true,
+			},
+			"password": schema.StringAttribute{
+				Optional:  true,
+				Sensitive: true,
+			},
+			"auth_url": schema.StringAttribute{
+				Optional: true,
+			},
+			"token_url": schema.StringAttribute{
+				Optional: true,
+			},
+			"vm_api_url": schema.StringAttribute{
+				Optional: true,
+			},
+			"player_api_url": schema.StringAttribute{
+				Optional: true,
+			},
+			"caster_api_url": schema.StringAttribute{
+				Optional: true,
+			},
+			"client_id": schema.StringAttribute{
+				Optional: true,
+			},
+			"client_secret": schema.StringAttribute{
+				Optional:  true,
+				Sensitive: true,
+			},
+			"client_scopes": schema.ListAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+			},
+		},
+	}
+}
+
+// Configure reads provider configuration, applies SEI_CRUCIBLE_* environment
+// variable fallbacks, and builds the map[string]string consumed by the api
+// layer. The map is supplied to all resources via resp.ResourceData.
+func (p *crucibleProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
+	var cfg crucibleProviderModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	m := make(map[string]string)
-	m["username"] = user.(string)
-	m["password"] = pass.(string)
-	m["auth_url"] = auth.(string)
-	m["player_token_url"] = playerTok.(string)
-	m["vm_api_url"] = vmAPI.(string)
-	m["player_api_url"] = playerAPI.(string)
-	m["caster_api_url"] = casterAPI.(string)
-	m["client_id"] = id.(string)
-	m["client_secret"] = sec.(string)
-	m["client_scopes"] = scopes
-	return m, nil
+	// Resolve each value: use the configured value when present and non-empty,
+	// otherwise fall back to the corresponding environment variable.
+	username := resolve(cfg.Username, "SEI_CRUCIBLE_USERNAME")
+	password := resolve(cfg.Password, "SEI_CRUCIBLE_PASSWORD")
+	authURL := resolve(cfg.AuthURL, "SEI_CRUCIBLE_AUTH_URL")
+	tokenURL := resolve(cfg.TokenURL, "SEI_CRUCIBLE_TOK_URL")
+	vmAPIURL := resolve(cfg.VMAPIURL, "SEI_CRUCIBLE_VM_API_URL")
+	playerAPIURL := resolve(cfg.PlayerAPIURL, "SEI_CRUCIBLE_PLAYER_API_URL")
+	casterAPIURL := resolve(cfg.CasterAPIURL, "SEI_CRUCIBLE_CASTER_API_URL")
+	clientID := resolve(cfg.ClientID, "SEI_CRUCIBLE_CLIENT_ID")
+	clientSecret := resolve(cfg.ClientSecret, "SEI_CRUCIBLE_CLIENT_SECRET")
+
+	// client_scopes is a list; fall back to the comma/space delimited env var.
+	var scopes string
+	if !cfg.ClientScopes.IsNull() && !cfg.ClientScopes.IsUnknown() {
+		var scopesList []string
+		resp.Diagnostics.Append(cfg.ClientScopes.ElementsAs(ctx, &scopesList, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		scopes = strings.Join(scopesList, ",")
+	} else {
+		scopes = os.Getenv("SEI_CRUCIBLE_CLIENT_SCOPES")
+	}
+
+	m := map[string]string{
+		"username":         username,
+		"password":         password,
+		"auth_url":         authURL,
+		"player_token_url": tokenURL,
+		"vm_api_url":       vmAPIURL,
+		"player_api_url":   playerAPIURL,
+		"caster_api_url":   casterAPIURL,
+		"client_id":        clientID,
+		"client_secret":    clientSecret,
+		"client_scopes":    scopes,
+	}
+
+	// Make the configuration map available to resources and data sources.
+	resp.ResourceData = m
+	resp.DataSourceData = m
+}
+
+// resolve returns the configured string when set and non-empty, otherwise the
+// value of the named environment variable.
+func resolve(val types.String, envVar string) string {
+	if !val.IsNull() && !val.IsUnknown() && val.ValueString() != "" {
+		return val.ValueString()
+	}
+	return os.Getenv(envVar)
+}
+
+// Resources returns the resource types implemented by the provider.
+func (p *crucibleProvider) Resources(_ context.Context) []func() resource.Resource {
+	return []func() resource.Resource{
+		NewUserResource,
+		NewVlanResource,
+		NewViewNetworkResource,
+		NewApplicationTemplateResource,
+		NewVirtualMachineResource,
+		NewViewResource,
+	}
+}
+
+// DataSources returns the data source types implemented by the provider. The
+// provider currently exposes no data sources.
+func (p *crucibleProvider) DataSources(_ context.Context) []func() datasource.DataSource {
+	return nil
 }

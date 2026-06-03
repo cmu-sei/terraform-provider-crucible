@@ -4,164 +4,206 @@
 package provider
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"log"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func casterVlan() *schema.Resource {
-	return &schema.Resource{
-		Create: casterVlanCreate,
-		Read:   casterVlanRead,
-		Delete: casterVlanDelete,
+var (
+	_ resource.Resource                = &vlanResource{}
+	_ resource.ResourceWithConfigure   = &vlanResource{}
+	_ resource.ResourceWithImportState = &vlanResource{}
+)
 
-		Schema: map[string]*schema.Schema{
-			"partition_id": {
-				Type:          schema.TypeString,
-				Optional:      true,
-				ConflictsWith: []string{"project_id"},
-				ForceNew:      true,
-				Computed:      true,
-			},
-			"pool_id": {
-				Type:     schema.TypeString,
+// vlanResource is the resource implementation for crucible_vlan.
+type vlanResource struct {
+	cfg map[string]string
+}
+
+type vlanModel struct {
+	ID          types.String `tfsdk:"id"`
+	PartitionID types.String `tfsdk:"partition_id"`
+	PoolID      types.String `tfsdk:"pool_id"`
+	ProjectID   types.String `tfsdk:"project_id"`
+	Tag         types.String `tfsdk:"tag"`
+	VlanID      types.Int64  `tfsdk:"vlan_id"`
+}
+
+// NewVlanResource is a helper to instantiate the resource.
+func NewVlanResource() resource.Resource {
+	return &vlanResource{}
+}
+
+func (r *vlanResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_vlan"
+}
+
+func (r *vlanResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+	cfg, ok := req.ProviderData.(map[string]string)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Provider Configuration Type",
+			fmt.Sprintf("Expected map[string]string, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+		return
+	}
+	r.cfg = cfg
+}
+
+func (r *vlanResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
 				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
-			"project_id": {
-				Type:     schema.TypeString,
-				Optional: true,
-				ForceNew: true,
-			},
-			"tag": {
-				Type:     schema.TypeString,
-				Optional: true,
-				ForceNew: true,
-				Computed: true,
-			},
-			"vlan_id": {
-				Type:     schema.TypeInt,
+			"partition_id": schema.StringAttribute{
 				Optional: true,
 				Computed: true,
-				ForceNew: true,
+				Validators: []validator.String{
+					stringvalidator.ConflictsWith(path.MatchRoot("project_id")),
+				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"pool_id": schema.StringAttribute{
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"project_id": schema.StringAttribute{
+				Optional: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"tag": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"vlan_id": schema.Int64Attribute{
+				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
 }
 
-// Get view properties from d
-// Call API to create view
-// If no error, set local state
-// Call read to make sure everything worked
-func casterVlanCreate(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *vlanResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan vlanModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	vlanCreateCommand := &structs.VlanCreateCommand{
-		ProjectId:   d.Get("project_id").(string),
-		PartitionId: d.Get("partition_id").(string),
-		Tag:         d.Get("tag").(string),
+	cmd := &structs.VlanCreateCommand{
+		ProjectId:   plan.ProjectID.ValueString(),
+		PartitionId: plan.PartitionID.ValueString(),
+		Tag:         plan.Tag.ValueString(),
 	}
 
-	vlanId, vlanIdExists := d.GetOk("vlan_id")
-
-	if vlanIdExists {
-		vlanCreateCommand.VlanId = sql.NullInt32{Int32: int32(vlanId.(int)), Valid: true}
+	// Only request a specific VLAN ID when one was configured.
+	if !plan.VlanID.IsNull() && !plan.VlanID.IsUnknown() {
+		cmd.VlanId = sql.NullInt32{Int32: int32(plan.VlanID.ValueInt64()), Valid: true}
 	}
 
-	casted := m.(map[string]string)
-	vlan, err := api.CreateVlan(vlanCreateCommand, casted)
+	vlan, err := api.CreateVlan(cmd, r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error creating vlan", err.Error())
+		return
 	}
 
-	d.SetId(vlan.Id)
+	plan.ID = types.StringValue(vlan.Id)
+	applyVlan(&plan, vlan)
 
-	err = d.Set("vlan_id", vlan.VlanId)
-	if err != nil {
-		return err
-	}
-
-	// Set local state
-	err = d.Set("vlan_id", vlan.VlanId)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("pool_id", vlan.PoolId)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("partition_id", vlan.PartitionId)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("tag", vlan.Tag)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("! Vlan created with ID %s", d.Id())
-	return nil
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-// Check if vlan exists. If not, set id to "" and return nil
-// Read vlan info from API
-// Use it to update local state
-func casterVlanRead(d *schema.ResourceData, m interface{}) error {
-	id := d.Id()
-	casted := m.(map[string]string)
-
-	// Call API to read state of the vlan
-	vlan, err := api.ReadVlan(id, casted)
-	if err != nil {
-		return err
+func (r *vlanResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state vlanModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
+	vlan, err := api.ReadVlan(state.ID.ValueString(), r.cfg)
+	if err != nil {
+		resp.Diagnostics.AddError("Error reading vlan", err.Error())
+		return
+	}
+
+	// A VLAN that is no longer in use has been released externally.
 	if !vlan.InUse {
-		d.SetId("")
-		return nil
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
-	// Set local state
-	err = d.Set("vlan_id", vlan.VlanId)
-	if err != nil {
-		return err
-	}
+	applyVlan(&state, vlan)
 
-	err = d.Set("pool_id", vlan.PoolId)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("partition_id", vlan.PartitionId)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("tag", vlan.Tag)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Delete vlan
-// Call API release function. Return nil on success or some error on failure
-func casterVlanDelete(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+// Update is required by the resource.Resource interface. Every configurable
+// attribute on this resource forces replacement, so Update is never expected to
+// run; it simply persists the planned values.
+func (r *vlanResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan vlanModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+func (r *vlanResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state vlanModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	id := d.Id()
-	casted := m.(map[string]string)
+	if err := api.DeleteVlan(state.ID.ValueString(), r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error deleting vlan", err.Error())
+	}
+}
 
-	return api.DeleteVlan(id, casted)
+func (r *vlanResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// applyVlan copies the API representation of a VLAN into the model.
+func applyVlan(m *vlanModel, vlan *structs.Vlan) {
+	m.VlanID = types.Int64Value(int64(vlan.VlanId))
+	m.PoolID = types.StringValue(vlan.PoolId)
+	m.PartitionID = types.StringValue(vlan.PartitionId)
+	m.Tag = types.StringValue(vlan.Tag)
 }

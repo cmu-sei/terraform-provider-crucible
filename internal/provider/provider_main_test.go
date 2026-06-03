@@ -6,13 +6,24 @@ package provider_test
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
+
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
+
+// testAccProtoV6ProviderFactories provides the Plugin Framework provider to the
+// acceptance test harness via the v6 protocol.
+var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
+	"crucible": providerserver.NewProtocol6WithError(provider.New("test")()),
+}
 
 // This file will hold the global variables needed by the various test functions. It will also set up these globals
 // by reading the config. Unfortunately Go does not support file scoped variables for some reason so other test files

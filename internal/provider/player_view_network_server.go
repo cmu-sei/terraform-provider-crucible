@@ -4,187 +4,256 @@
 package provider
 
 import (
+	"context"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
 	"sort"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func playerViewNetwork() *schema.Resource {
-	return &schema.Resource{
-		Create: playerViewNetworkCreate,
-		Read:   playerViewNetworkRead,
-		Update: playerViewNetworkUpdate,
-		Delete: playerViewNetworkDelete,
+var (
+	_ resource.Resource                = &viewNetworkResource{}
+	_ resource.ResourceWithConfigure   = &viewNetworkResource{}
+	_ resource.ResourceWithImportState = &viewNetworkResource{}
+)
 
-		Schema: map[string]*schema.Schema{
-			"view_id": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-			},
-			"provider_type": {
-				Type:         schema.TypeString,
-				Required:     true,
-				ValidateFunc: validation.StringInSlice([]string{"Unknown", "Vsphere", "Proxmox", "Azure"}, false),
-			},
-			"provider_instance_id": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"network_id": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"name": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"team_ids": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
+// viewNetworkResource is the resource implementation for
+// crucible_player_view_network.
+type viewNetworkResource struct {
+	cfg map[string]string
+}
+
+type viewNetworkModel struct {
+	ID                 types.String `tfsdk:"id"`
+	ViewID             types.String `tfsdk:"view_id"`
+	ProviderType       types.String `tfsdk:"provider_type"`
+	ProviderInstanceID types.String `tfsdk:"provider_instance_id"`
+	NetworkID          types.String `tfsdk:"network_id"`
+	Name               types.String `tfsdk:"name"`
+	TeamIDs            types.List   `tfsdk:"team_ids"`
+}
+
+// NewViewNetworkResource is a helper to instantiate the resource.
+func NewViewNetworkResource() resource.Resource {
+	return &viewNetworkResource{}
+}
+
+func (r *viewNetworkResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_player_view_network"
+}
+
+func (r *viewNetworkResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+	cfg, ok := req.ProviderData.(map[string]string)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Provider Configuration Type",
+			fmt.Sprintf("Expected map[string]string, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+		return
+	}
+	r.cfg = cfg
+}
+
+func (r *viewNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
+			},
+			"view_id": schema.StringAttribute{
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"provider_type": schema.StringAttribute{
+				Required: true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("Unknown", "Vsphere", "Proxmox", "Azure"),
+				},
+			},
+			"provider_instance_id": schema.StringAttribute{
+				Required: true,
+			},
+			"network_id": schema.StringAttribute{
+				Required: true,
+			},
+			"name": schema.StringAttribute{
+				Required: true,
+			},
+			"team_ids": schema.ListAttribute{
+				Optional:    true,
+				Computed:    true,
+				ElementType: types.StringType,
 			},
 		},
 	}
 }
 
-func playerViewNetworkCreate(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *viewNetworkResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan viewNetworkModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	casted := m.(map[string]string)
-
-	tIDs := d.Get("team_ids").([]interface{})
-	teamIds := *util.ToStringSlice(&tIDs)
+	teamIDs, diags := toStringSlice(ctx, plan.TeamIDs)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	network := &structs.ViewNetworkInfo{
-		ViewID:             d.Get("view_id").(string),
-		ProviderType:       d.Get("provider_type").(string),
-		ProviderInstanceId: d.Get("provider_instance_id").(string),
-		NetworkId:          d.Get("network_id").(string),
-		Name:               d.Get("name").(string),
-		TeamIds:            teamIds,
+		ViewID:             plan.ViewID.ValueString(),
+		ProviderType:       plan.ProviderType.ValueString(),
+		ProviderInstanceId: plan.ProviderInstanceID.ValueString(),
+		NetworkId:          plan.NetworkID.ValueString(),
+		Name:               plan.Name.ValueString(),
+		TeamIds:            teamIDs,
 	}
 
-	result, err := api.CreateViewNetwork(network, casted)
+	result, err := api.CreateViewNetwork(network, r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error creating view network", err.Error())
+		return
 	}
 
-	d.SetId(result.ID)
+	plan.ID = types.StringValue(result.ID)
 
-	log.Printf("! ViewNetwork created with ID %s", d.Id())
-	return playerViewNetworkRead(d, m)
+	resp.Diagnostics.Append(r.read(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func playerViewNetworkRead(d *schema.ResourceData, m interface{}) error {
-	id := d.Id()
-	casted := m.(map[string]string)
-	viewID := d.Get("view_id").(string)
+func (r *viewNetworkResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state viewNetworkModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
-	exists, err := api.ViewNetworkExists(viewID, id, casted)
+	exists, err := api.ViewNetworkExists(state.ViewID.ValueString(), state.ID.ValueString(), r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error checking view network existence", err.Error())
+		return
 	}
 	if !exists {
-		d.SetId("")
-		return nil
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
-	network, err := api.GetViewNetwork(viewID, id, casted)
+	resp.Diagnostics.Append(r.read(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func (r *viewNetworkResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan viewNetworkModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	teamIDs, diags := toStringSlice(ctx, plan.TeamIDs)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	network := &structs.ViewNetworkInfo{
+		ID:                 plan.ID.ValueString(),
+		ViewID:             plan.ViewID.ValueString(),
+		ProviderType:       plan.ProviderType.ValueString(),
+		ProviderInstanceId: plan.ProviderInstanceID.ValueString(),
+		NetworkId:          plan.NetworkID.ValueString(),
+		Name:               plan.Name.ValueString(),
+		TeamIds:            teamIDs,
+	}
+
+	if err := api.UpdateViewNetwork(network, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error updating view network", err.Error())
+		return
+	}
+
+	resp.Diagnostics.Append(r.read(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+func (r *viewNetworkResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state viewNetworkModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	viewID := state.ViewID.ValueString()
+	id := state.ID.ValueString()
+	exists, err := api.ViewNetworkExists(viewID, id, r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error checking view network existence", err.Error())
+		return
+	}
+	if !exists {
+		return
 	}
 
-	err = d.Set("view_id", network.ViewID)
+	if err := api.DeleteViewNetwork(viewID, id, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error deleting view network", err.Error())
+	}
+}
+
+func (r *viewNetworkResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// read refreshes the model from the API.
+func (r *viewNetworkResource) read(ctx context.Context, m *viewNetworkModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	network, err := api.GetViewNetwork(m.ViewID.ValueString(), m.ID.ValueString(), r.cfg)
 	if err != nil {
-		return err
+		diags.AddError("Error reading view network", err.Error())
+		return diags
 	}
 
-	err = d.Set("provider_type", network.ProviderType)
-	if err != nil {
-		return err
-	}
+	m.ViewID = types.StringValue(network.ViewID)
+	m.ProviderType = types.StringValue(network.ProviderType)
+	m.ProviderInstanceID = types.StringValue(network.ProviderInstanceId)
+	m.NetworkID = types.StringValue(network.NetworkId)
+	m.Name = types.StringValue(network.Name)
 
-	err = d.Set("provider_instance_id", network.ProviderInstanceId)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("network_id", network.NetworkId)
-	if err != nil {
-		return err
-	}
-
-	err = d.Set("name", network.Name)
-	if err != nil {
-		return err
-	}
-
-	// Sort team IDs for consistent state
+	// Sort team IDs for consistent state.
 	sort.Strings(network.TeamIds)
-	err = d.Set("team_ids", network.TeamIds)
-	if err != nil {
-		return err
-	}
+	teamIDs, d := types.ListValueFrom(ctx, types.StringType, network.TeamIds)
+	diags.Append(d...)
+	m.TeamIDs = teamIDs
 
-	return nil
-}
-
-func playerViewNetworkUpdate(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
-	}
-
-	casted := m.(map[string]string)
-
-	tIDs := d.Get("team_ids").([]interface{})
-	teamIds := *util.ToStringSlice(&tIDs)
-
-	network := &structs.ViewNetworkInfo{
-		ID:                 d.Id(),
-		ViewID:             d.Get("view_id").(string),
-		ProviderType:       d.Get("provider_type").(string),
-		ProviderInstanceId: d.Get("provider_instance_id").(string),
-		NetworkId:          d.Get("network_id").(string),
-		Name:               d.Get("name").(string),
-		TeamIds:            teamIds,
-	}
-
-	err := api.UpdateViewNetwork(network, casted)
-	if err != nil {
-		return err
-	}
-
-	return playerViewNetworkRead(d, m)
-}
-
-func playerViewNetworkDelete(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
-	}
-
-	id := d.Id()
-	casted := m.(map[string]string)
-	viewID := d.Get("view_id").(string)
-
-	exists, err := api.ViewNetworkExists(viewID, id, casted)
-	if err != nil {
-		return err
-	}
-
-	if !exists {
-		return nil
-	}
-
-	return api.DeleteViewNetwork(viewID, id, casted)
+	return diags
 }

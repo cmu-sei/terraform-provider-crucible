@@ -5,18 +5,18 @@ package provider_test
 
 import (
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 // Test case for creation and updating of an empty view. That is, one without any teams or applications inside of it
@@ -32,9 +32,7 @@ import (
 // The resource is created, updated, and destroyed without error
 func TestAccEmptyView(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				// Create resource and check
@@ -68,9 +66,7 @@ func TestAccEmptyView(t *testing.T) {
 // The resource is created, updated, and destroyed without error
 func TestAccViewWithApps(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: configViewApps,
@@ -98,9 +94,7 @@ func TestAccViewWithApps(t *testing.T) {
 // The resource is created, updated, and destroyed without error
 func TestAccViewWithTeams(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: configViewTeams,
@@ -126,9 +120,7 @@ func TestAccViewWithTeams(t *testing.T) {
 // Resource is created, updated, and destroyed without error
 func TestAccViewWithUsers(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: configViewUsers,
@@ -156,9 +148,7 @@ func TestAccViewWithUsers(t *testing.T) {
 // View can be created and updated without error
 func TestAccViewInstances(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// View with 2 app instances
 			{

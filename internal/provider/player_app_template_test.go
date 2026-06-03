@@ -5,14 +5,14 @@ package provider_test
 
 import (
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 // Test case for the creation and updating of an application template resource
@@ -28,9 +28,7 @@ import (
 // Resource is created, updated, and destroyed without error
 func TestAccAppTemplate(t *testing.T) {
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: configAppTemplate,
