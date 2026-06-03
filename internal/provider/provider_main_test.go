@@ -480,11 +480,12 @@ func getCreds() string {
 		client_secret = "%s"
 		vm_api_url = "%s"
 		player_api_url = "%s"
+		caster_api_url = "%s"
 	}
-	
+
 	`, os.Getenv("TF_PROV_NAME"), os.Getenv("TF_USERNAME"), os.Getenv("TF_PASSWORD"), os.Getenv("TF_AUTH_URL"),
 		os.Getenv("TF_TOK_URL"), os.Getenv("TF_CLIENT_ID"), os.Getenv("TF_CLIENT_SECRET"), os.Getenv("TF_VM_API_URL"),
-		os.Getenv("TF_PLAYER_API_URL"))
+		os.Getenv("TF_PLAYER_API_URL"), os.Getenv("TF_CASTER_API_URL"))
 
 	return ret
 }
@@ -705,6 +706,7 @@ func getMap() map[string]string {
 	m["client_secret"] = os.Getenv("TF_CLIENT_SECRET")
 	m["vm_api_url"] = os.Getenv("TF_VM_API_URL")
 	m["player_api_url"] = os.Getenv("TF_PLAYER_API_URL")
+	m["caster_api_url"] = os.Getenv("TF_CASTER_API_URL")
 
 	return m
 }

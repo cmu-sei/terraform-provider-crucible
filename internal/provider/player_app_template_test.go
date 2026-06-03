@@ -29,6 +29,7 @@ import (
 func TestAccAppTemplate(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.test"),
 		Steps: []resource.TestStep{
 			{
 				Config: configAppTemplate,
@@ -54,8 +55,31 @@ func TestAccAppTemplate(t *testing.T) {
 						"false", "false"),
 				),
 			},
+			{
+				ResourceName:      "crucible_player_application_template.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
+}
+
+// testAccTemplateDestroyed asserts the application template no longer exists.
+func testAccTemplateDestroyed(res string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[res]
+		if !ok {
+			return nil
+		}
+		exists, err := api.AppTemplateExists(rs.Primary.ID, getMap())
+		if err != nil {
+			return fmt.Errorf("error checking destroyed template %s: %w", rs.Primary.ID, err)
+		}
+		if exists {
+			return fmt.Errorf("template %s still exists after destroy", rs.Primary.ID)
+		}
+		return nil
+	}
 }
 
 func verifyRemoteTemplate(name, url, icon, embeddable, load string) resource.TestCheckFunc {

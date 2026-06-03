@@ -33,6 +33,7 @@ import (
 func TestAccEmptyView(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
 				// Create resource and check
@@ -54,6 +55,14 @@ func TestAccEmptyView(t *testing.T) {
 					}),
 				),
 			},
+			{
+				// Import an empty view by id and confirm it succeeds. Nested
+				// blocks carry computed ids, so a full ImportStateVerify is left
+				// to per-attribute checks above; this exercises the import path.
+				ResourceName:      "crucible_player_view.empty",
+				ImportState:       true,
+				ImportStateVerify: false,
+			},
 		},
 	})
 }
@@ -67,6 +76,7 @@ func TestAccEmptyView(t *testing.T) {
 func TestAccViewWithApps(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
 				Config: configViewApps,
@@ -95,6 +105,7 @@ func TestAccViewWithApps(t *testing.T) {
 func TestAccViewWithTeams(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
 				Config: configViewTeams,
@@ -121,6 +132,7 @@ func TestAccViewWithTeams(t *testing.T) {
 func TestAccViewWithUsers(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
 				Config: configViewUsers,
@@ -149,6 +161,7 @@ func TestAccViewWithUsers(t *testing.T) {
 func TestAccViewInstances(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			// View with 2 app instances
 			{
@@ -187,6 +200,24 @@ func TestAccViewInstances(t *testing.T) {
 }
 
 // -------------------- Helper functions --------------------
+
+// testAccViewDestroyed asserts that every crucible_player_view resource left in
+// state no longer exists in the Player API after destroy.
+func testAccViewDestroyed(s *terraform.State) error {
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "crucible_player_view" {
+			continue
+		}
+		exists, err := api.ViewExists(rs.Primary.ID, getMap())
+		if err != nil {
+			return fmt.Errorf("error checking destroyed view %s: %w", rs.Primary.ID, err)
+		}
+		if exists {
+			return fmt.Errorf("view %s still exists after destroy", rs.Primary.ID)
+		}
+	}
+	return nil
+}
 
 func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
