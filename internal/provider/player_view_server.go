@@ -200,11 +200,18 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 										Required: true,
 									},
 									"role": schema.StringAttribute{
-										// Optional+Computed: the API echoes an empty
-										// role ("") when one isn't configured, so the
-										// provider must be allowed to set it.
+										// Optional+Computed: the API echoes a role
+										// ("" when none is configured), so carry the
+										// prior-state value forward on update instead
+										// of re-planning it as "known after apply".
+										// unknownIfNull covers a newly-added user that
+										// has no prior state to carry.
 										Optional: true,
 										Computed: true,
+										PlanModifiers: []planmodifier.String{
+											stringplanmodifier.UseStateForUnknown(),
+											unknownIfNull{},
+										},
 									},
 								},
 							},

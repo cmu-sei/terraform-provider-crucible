@@ -15,7 +15,10 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 // Test case for creation and updating of an empty view. That is, one without any teams or applications inside of it
@@ -196,6 +199,82 @@ func TestAccViewInstances(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestAccViewUserRoleStablePlan is a regression test for a plan-only bug: when an
+// unrelated attribute on a crucible_player_view changed (e.g. an application name),
+// the nested team -> user -> role attribute — which has no role configured — re-planned
+// as "(known after apply)" on every user, producing a spurious diff. The role plan
+// modifiers (UseStateForUnknown + unknownIfNull in player_view_server.go) fix this by
+// carrying the prior-state value forward.
+//
+// The defect is invisible to state-based checks (the value re-stabilizes after apply),
+// so this test asserts on the *plan* of an update: changing only the application name
+// must leave the user's role as the known value "" rather than unknown. With the fix the
+// PreApply check passes; without it ExpectKnownValue fails with "attribute value is
+// unknown".
+//
+// A single-team/single-user inline config is used (rather than the shared fixtures) so
+// the positional tfjsonpath team[0].user[0] is unambiguous.
+func TestAccViewUserRoleStablePlan(t *testing.T) {
+	// Use a seeded user GUID the Player API recognizes (the same one the shared
+	// user-view fixtures use); the generic TF_TEST_USER_ID is not a real Player
+	// user and 404s when added to a team.
+	userID := envOrDefault("TF_TEST_VIEW_USER_ID", "9b3b331c-10c1-448b-8114-21b2586d8e38")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				// Create with one user and no configured role.
+				Config: correctCreds + viewOneUserConfig("appA", userID),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view.regrole", "team.0.user.0.user_id", userID),
+					resource.TestCheckResourceAttr("crucible_player_view.regrole", "team.0.user.0.role", ""),
+				),
+			},
+			{
+				// Change only the application name. The user's role must stay a
+				// known "" in the plan, not flip to unknown.
+				Config: correctCreds + viewOneUserConfig("appB", userID),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectKnownValue(
+							"crucible_player_view.regrole",
+							tfjsonpath.New("team").AtSliceIndex(0).
+								AtMapKey("user").AtSliceIndex(0).AtMapKey("role"),
+							knownvalue.StringExact(""),
+						),
+					},
+				},
+			},
+		},
+	})
+}
+
+// viewOneUserConfig builds a minimal crucible_player_view with a single application and a
+// single team containing one user with no role configured. appName is the application
+// name (vary it to drive an unrelated in-place update).
+func viewOneUserConfig(appName, userID string) string {
+	return fmt.Sprintf(`resource "crucible_player_view" "regrole" {
+	name        = "test"
+	description = "role plan regression"
+	status      = "Active"
+
+	application {
+		name = %q
+	}
+
+	team {
+		name = "reg"
+
+		user {
+			user_id = %q
+		}
+	}
+}
+`, appName, userID)
 }
 
 // -------------------- Helper functions --------------------
