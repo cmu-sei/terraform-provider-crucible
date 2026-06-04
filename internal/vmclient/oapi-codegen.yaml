@@ -1,0 +1,23 @@
+# oapi-codegen config for the Player VM API client.
+#
+# Regenerate with `task gen-vm-client` (fetches the spec from a running VM API,
+# then runs oapi-codegen against this config). The spec is committed alongside
+# this file as openapi.json so ordinary builds need no live stack.
+#
+# Only the VM and team-VM operations the Terraform provider actually uses are
+# generated (include-operation-ids) — the full Player VM API surface (maps,
+# sessions, vsphere/proxmox console, etc.) is intentionally excluded to keep the
+# generated client small and stable.
+package: vmclient
+output: vmclient.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  include-operation-ids:
+    - createVm
+    - getVm
+    - updateVm
+    - deleteVm
+    - addVmToTeam
+    - removeVmFromTeam

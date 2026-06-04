@@ -6,10 +6,25 @@ tasks:
     cmds:
       - go build .
 
+  gen-vm-client:
+    desc: >-
+      Regenerate the typed Player VM API client (internal/vmclient) from a
+      running VM API's OpenAPI spec. Requires a live VM API; override
+      VM_SWAGGER_URL to point elsewhere. The fetched spec and generated client
+      are committed so ordinary builds need no stack.
+    vars:
+      VM_SWAGGER_URL: '{{.VM_SWAGGER_URL | default "http://localhost:4302/swagger/v1/swagger.json"}}'
+    dir: internal/vmclient
+    cmds:
+      - curl -sk "{{.VM_SWAGGER_URL}}" -o openapi.json
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
+
   test:
     desc: Run offline unit tests (no live stack). Acceptance steps self-skip without TF_ACC.
     cmds:
-      - go test -v ./...
+      # gotestsum streams per-test results and prints a clean summary; flags after
+      # `--` pass through to `go test`.
+      - go run gotest.tools/gotestsum --format testname -- ./...
 
   testacc:
     desc: >-
@@ -19,9 +34,14 @@ tasks:
     env:
       TF_ACC: "1"
     cmds:
-      # -count=1 disables Go's test result cache so the live API is hit on every
-      # run (otherwise an unchanged build prints a cached "ok" without running).
-      - go test -v -count=1 ./... -timeout 60m
+      # gotestsum streams per-test results as they finish (the standard `go test`
+      # multi-package runner buffers each package's output until it completes, so
+      # the long-running provider package looks like it's hanging). Flags after
+      # `--` pass through to `go test`:
+      #   -count=1   disables Go's test result cache so the live API is hit every
+      #              run (otherwise an unchanged build prints a cached "ok").
+      #   -timeout   bounds the full live suite.
+      - go run gotest.tools/gotestsum --format testname -- -count=1 -timeout 60m ./...
 
   clean:
     desc: Remove build artifacts

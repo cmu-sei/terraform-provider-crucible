@@ -54,8 +54,13 @@ func TestAccVMBasicFail(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config:      correctCreds + configVMIncorrectUserID,
-				ExpectError: regexp.MustCompile("status code 400"),
+				Config: correctCreds + configVMIncorrectUserID,
+				// The config supplies a malformed user_id ("_"). The typed VM
+				// client (internal/vmclient) parses ids into UUIDs before issuing
+				// the request, so an invalid value is now rejected client-side
+				// ("invalid UUID...") rather than by the API returning 400. Match
+				// either so the test passes regardless of which layer rejects it.
+				ExpectError: regexp.MustCompile("(?i)invalid UUID|status code 400"),
 			},
 		},
 	})

@@ -4,96 +4,82 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
 	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/vmclient"
 )
+
+// This file adapts the provider's VM operations onto the oapi-codegen–generated
+// Player VM API client (internal/vmclient). The exported function signatures are
+// unchanged from the previous hand-written net/http implementation so the VM
+// resource (player_virtual_machine_server.go) is unaffected; only the bodies and
+// the model marshaling now go through the typed client. structs.VMInfo remains
+// the provider-facing model — conversion to/from the generated types happens in
+// the helpers at the bottom of this file.
 
 // -------------------- API Wrappers --------------------
 
-// CreateVM wraps the the POST function in the VM API that creates a new VM.
+// CreateVM creates a new VM via the VM API.
 //
 // param requestBody: The struct representing the VM to be created
 //
 // param m: map containing provider config info
 func CreateVM(requestBody *structs.VMInfo, m map[string]string) error {
-	log.Printf("! In create API wrapper")
-	auth, err := util.GetAuth(m)
-	if err != nil {
-		log.Printf("! In create API wrapper, error authenticating")
-		return err
-	}
-
-	asJSON, err := json.Marshal(requestBody)
-
-	// We encountered an error when encoding the struct as JSON
-	if err != nil {
-		log.Printf("! In create API wrapper, error encoding request as JSON")
-		return err
-	}
-
-	// Set up the HTTP request
-	req, err := http.NewRequest("POST", util.GetVmApiUrl(m)+"vms", bytes.NewBuffer(asJSON))
+	client, err := vmclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Authorization", "Bearer "+auth)
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
 
-	log.Printf("! JSON being sent to API:\n %v", string(asJSON))
-	// Make the request
-	resp, err := client.Do(req)
+	form, err := toCreateForm(requestBody)
 	if err != nil {
-		log.Printf("! In create API wrapper, error making HTTP request")
 		return err
 	}
 
-	log.Printf("! In create API wrapper, request returned with status code %d", resp.StatusCode)
-	// Make sure the request succeeded
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("Request returned with status code %d", resp.StatusCode)
+	resp, err := client.CreateVmWithResponse(context.Background(), form)
+	if err != nil {
+		return err
 	}
-
-	// If we get here, the request was successful
-	log.Printf("! Returning from create wrapper without error")
+	if resp.StatusCode() != http.StatusCreated {
+		return fmt.Errorf("Request returned with status code %d", resp.StatusCode())
+	}
 	return nil
 }
 
-// GetVMInfo Wraps the VM API call for retrieving vm info.
+// GetVMInfo retrieves a VM's info by id.
 //
-// # Param id the id of the VM to look up
+// param id: the id of the VM to look up
 //
 // Returns a struct containing the VM's info, and a possible error
 func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {
-	log.Printf("! In read API wrapper")
-	// Make the HTTP request
-	log.Printf("! In read API wrapper, calling getVMByID helper function")
-	resp, err := getVMByID(id, m)
+	client, err := vmclient.NewAuthed(m)
 	if err != nil {
-		log.Printf("! In read API wrapper, error getting VM")
 		return nil, err
 	}
 
-	log.Printf("! In read API wrapper, request returned with status code %d", resp.StatusCode)
-	// Check if the request was successful
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Request returned with status code %d", resp.StatusCode)
+	vmID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
 	}
 
-	// Get the VM's info from the response
-	ret := unpackResponse(resp)
-
-	// If we're here, no errors have occurred so return data and nil
-	log.Printf("! In read API wrapper, returning without error")
-	return ret, nil
+	resp, err := client.GetVmWithResponse(context.Background(), vmID)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("Request returned with status code %d", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("VM API returned status 200 with an empty body")
+	}
+	return fromVM(resp.JSON200), nil
 }
 
-// UpdateVM wraps the for update VM API call.
+// UpdateVM updates a VM via the VM API.
 //
 // requestBody: struct representing the data to update the VM with
 //
@@ -101,110 +87,72 @@ func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {
 //
 // Returns some error on failure and nil on success
 func UpdateVM(requestBody *structs.VMInfo, id string, m map[string]string) error {
-	log.Printf("! In update API wrapper")
-	url := util.GetVmApiUrl(m) + "vms/" + id
-
-	// Get auth token
-	auth, err := util.GetAuth(m)
+	client, err := vmclient.NewAuthed(m)
 	if err != nil {
-		log.Printf("! In update API wrapper, error authenticating")
 		return err
 	}
 
-	// Encode the request body struct as JSON
-	asJSON, err := json.Marshal(requestBody)
+	vmID, err := uuid.Parse(id)
 	if err != nil {
-		log.Printf("! In update API wrapper, error encoding request as JSON")
 		return err
 	}
 
-	// Set up the request
-	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
+	resp, err := client.UpdateVmWithResponse(context.Background(), vmID, toUpdateForm(requestBody))
 	if err != nil {
-		log.Printf("! In update API wrapper, error setting up request")
 		return err
 	}
-	req.Header.Add("Authorization", "Bearer "+auth)
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	// Make the request
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("! In update API wrapper, error making request")
-		return err
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("Request returned with status code %d", resp.StatusCode())
 	}
-
-	log.Printf("! In update API wrapper, request returned with status code %d", resp.StatusCode)
-	// Make sure the request succeeded
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Request returned with status code %d", resp.StatusCode)
-	}
-
-	log.Printf("! In update API wrapper, returning without error")
-	// If we're here, no errors have been encountered so return nil
 	return nil
 }
 
-// DeleteVM wraps the API to call to delete a given VM.
+// DeleteVM deletes a given VM.
 //
 // id: the id of the VM to delete
 //
 // returns error on failure or nil on success
 func DeleteVM(id string, m map[string]string) error {
-	log.Printf("! In delete API wrapper")
-	url := util.GetVmApiUrl(m) + "vms/" + id
-
-	// Get auth token
-	auth, err := util.GetAuth(m)
+	client, err := vmclient.NewAuthed(m)
 	if err != nil {
-		log.Printf("! In delete API wrapper, error authenticating")
 		return err
 	}
 
-	// Set up the request
-	req, err := http.NewRequest("DELETE", url, nil)
+	vmID, err := uuid.Parse(id)
 	if err != nil {
-		log.Printf("! In delete API wrapper, error setting up request")
-		return err
-	}
-	req.Header.Add("Authorization", "Bearer "+auth)
-	client := &http.Client{}
-
-	// Make the request
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("! In delete API wrapper, error making request")
 		return err
 	}
 
-	log.Printf("! In delete API wrapper, request returned with status code %d", resp.StatusCode)
-	// Check status code
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("Request returned with status code %d", resp.StatusCode)
+	resp, err := client.DeleteVmWithResponse(context.Background(), vmID)
+	if err != nil {
+		return err
 	}
-
-	log.Printf("! In delete API wrapper, returning without error")
-	// If we get here, there were no errors
+	if resp.StatusCode() != http.StatusNoContent {
+		return fmt.Errorf("Request returned with status code %d", resp.StatusCode())
+	}
 	return nil
 }
 
-// VMExists returns true if a VM with the given id exists
+// VMExists returns true if a VM with the given id exists.
 func VMExists(id string, m map[string]string) (bool, error) {
-	log.Printf("! In vmExists")
-	// Make the HTTP request to get this VM's info
-	resp, err := getVMByID(id, m)
+	client, err := vmclient.NewAuthed(m)
 	if err != nil {
-		log.Printf("! In vmExists, error making http request")
-		// The boolean value here will be ignored in the caller since error is non-nil
 		return false, err
 	}
 
-	log.Printf("! In vmExists, request returned with status code %d, so the function will return %v", resp.StatusCode, resp.StatusCode != http.StatusNotFound)
-	return (resp.StatusCode != http.StatusNotFound), nil
+	vmID, err := uuid.Parse(id)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := client.GetVmWithResponse(context.Background(), vmID)
+	if err != nil {
+		return false, err
+	}
+	return resp.StatusCode() != http.StatusNotFound, nil
 }
 
-// RemoveVMFromTeams removes the specified VM from the specified teams
+// RemoveVMFromTeams removes the specified VM from the specified teams.
 //
 // param teams: The IDs of the teams to remove the VM from
 //
@@ -214,42 +162,35 @@ func VMExists(id string, m map[string]string) (bool, error) {
 //
 // Returns nil on success or some error on failure
 func RemoveVMFromTeams(teams *[]string, vm string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := vmclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("! In Remove VM from Team API wrapper")
+	vmID, err := uuid.Parse(vm)
+	if err != nil {
+		return err
+	}
 
 	for _, team := range *teams {
-		url := util.GetVmApiUrl(m) + "teams/" + team + "/vms/" + vm
-		req, err := http.NewRequest("DELETE", url, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Add("Authorization", "Bearer "+auth)
-		client := &http.Client{}
-
-		log.Printf("! url = %v", url)
-		log.Printf("! request = %+v", req)
-
-		resp, err := client.Do(req)
+		teamID, err := uuid.Parse(team)
 		if err != nil {
 			return err
 		}
 
-		log.Printf("! response: %+v", resp)
-
-		status := resp.StatusCode
-		if status != http.StatusNoContent {
-			return fmt.Errorf("api returned with status code %d when removing VM %s from team %s", status, vm, team)
+		resp, err := client.RemoveVmFromTeamWithResponse(context.Background(), teamID, vmID)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode() != http.StatusNoContent {
+			return fmt.Errorf("api returned with status code %d when removing VM %s from team %s", resp.StatusCode(), vm, team)
 		}
 	}
 
 	return nil
 }
 
-// AddVMToTeams adds the specified VM to the specified teams
+// AddVMToTeams adds the specified VM to the specified teams.
 //
 // param teams: The IDs of the teams to add this VM to
 //
@@ -259,132 +200,217 @@ func RemoveVMFromTeams(teams *[]string, vm string, m map[string]string) error {
 //
 // Returns nil on success or some error on failure
 func AddVMToTeams(teams *[]string, vm string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := vmclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("! In add team to VM API wrapper")
+	vmID, err := uuid.Parse(vm)
+	if err != nil {
+		return err
+	}
 
 	for _, team := range *teams {
-		url := util.GetVmApiUrl(m) + "teams/" + team + "/vms/" + vm
-		req, err := http.NewRequest("POST", url, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Add("Authorization", "Bearer "+auth)
-		client := &http.Client{}
-
-		log.Printf("! url = %v", url)
-		log.Printf("! request = %+v", req)
-
-		resp, err := client.Do(req)
+		teamID, err := uuid.Parse(team)
 		if err != nil {
 			return err
 		}
 
-		log.Printf("! response: %+v", resp)
-
-		status := resp.StatusCode
-		if status != http.StatusOK {
-			return fmt.Errorf("api returned with status code %d when adding VM %s to team %s", status, vm, team)
+		resp, err := client.AddVmToTeamWithResponse(context.Background(), teamID, vmID)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return fmt.Errorf("api returned with status code %d when adding VM %s to team %s", resp.StatusCode(), vm, team)
 		}
 	}
 
 	return nil
 }
 
-// -------------------- Helper functions --------------------
+// -------------------- structs.VMInfo <-> generated model conversion --------------------
 
-// Returns the HTTP response from a GET call to get a VM's info
-func getVMByID(id string, m map[string]string) (*http.Response, error) {
-	log.Printf("! In getVMByID")
-	// Get auth token
-	auth, err := util.GetAuth(m)
+// toCreateForm maps a provider VMInfo onto the generated VmCreateForm. Url and
+// Embeddable are always sent (matching the previous client, which marshaled the
+// whole struct) so an empty Url lets the API compute the default. UserId is sent
+// only when set, preserving the nil-when-empty behavior.
+func toCreateForm(vm *structs.VMInfo) (vmclient.VmCreateForm, error) {
+	teamIDs, err := toUUIDs(vm.TeamIDs)
 	if err != nil {
-		log.Printf("! In getVMByID, error authenticating")
-		return nil, err
+		return vmclient.VmCreateForm{}, err
 	}
 
-	// Set up the request
-	url := util.GetVmApiUrl(m) + "vms/" + id
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		log.Printf("! In getVMByID, error setting up request")
-		return nil, err
-	}
-	req.Header.Add("Authorization", "Bearer "+auth)
-
-	// Make the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-
-	log.Printf("! response: %+v", resp)
-
-	if err != nil {
-		log.Printf("! In getVMByID, error making request")
-		return nil, err
+	url := vm.URL
+	embeddable := vm.Embeddable
+	form := vmclient.VmCreateForm{
+		Name:                  vm.Name,
+		TeamIds:               teamIDs,
+		Url:                   &url,
+		Embeddable:            &embeddable,
+		ConsoleConnectionInfo: toConnInfo(vm.Connection),
+		ProxmoxVmInfo:         toProxmoxInfo(vm.Proxmox),
 	}
 
-	log.Printf("! In getVMByID, returning without error")
-	return resp, nil
+	if vm.ID != "" {
+		id, err := uuid.Parse(vm.ID)
+		if err != nil {
+			return vmclient.VmCreateForm{}, err
+		}
+		form.Id = &id
+	}
+
+	if uid := userIDString(vm.UserID); uid != "" {
+		u, err := uuid.Parse(uid)
+		if err != nil {
+			return vmclient.VmCreateForm{}, err
+		}
+		form.UserId = &u
+	}
+
+	return form, nil
 }
 
-// Unpack the JSON response from a GET call to the API and place it into a vm info struct
-func unpackResponse(resp *http.Response) *structs.VMInfo {
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	asStr := buf.String()
-	defer resp.Body.Close()
-
-	// Convert the JSON string to a map that we can use to fill our struct
-	asMap := make(map[string]interface{})
-	json.Unmarshal([]byte(asStr), &asMap)
-
-	log.Printf("! Data returned by GET call:\n%v", asMap)
-
-	teams := asMap["teamIds"].([]interface{})
-	teamsConverted := util.ToStringSlice(&teams)
-
-	var connectionPtr *structs.ConsoleConnection
-	connection := asMap["consoleConnectionInfo"]
-	if connection != nil {
-		connectionPtr = structs.ConnectionFromMap(connection.(map[string]interface{}))
+// toUpdateForm maps a provider VMInfo onto the generated VmUpdateForm. The update
+// API ignores id/team membership (handled separately via Add/RemoveVMToTeams), so
+// those fields are absent from the form.
+func toUpdateForm(vm *structs.VMInfo) vmclient.VmUpdateForm {
+	url := vm.URL
+	embeddable := vm.Embeddable
+	form := vmclient.VmUpdateForm{
+		Name:                  vm.Name,
+		Url:                   &url,
+		Embeddable:            &embeddable,
+		ConsoleConnectionInfo: toConnInfo(vm.Connection),
+		ProxmoxVmInfo:         toProxmoxInfo(vm.Proxmox),
 	}
 
-	var proxmoxPtr *structs.ProxmoxInfo
-	proxmox := asMap["proxmoxVmInfo"]
-	if proxmox != nil {
-		proxmoxPtr = structs.ProxmoxInfoFromMap(proxmox.(map[string]interface{}))
+	if uid := userIDString(vm.UserID); uid != "" {
+		if u, err := uuid.Parse(uid); err == nil {
+			form.UserId = &u
+		}
 	}
 
-	// set defaults if defaultUrl and embeddable don't exist (older api versions)
-	defaultUrl := false
-	defaultUrlObj := asMap["defaultUrl"]
+	return form
+}
 
-	if defaultUrlObj != nil {
-		defaultUrl = defaultUrlObj.(bool)
+// fromVM maps a generated Vm response onto the provider VMInfo. The defaultUrl
+// (false) and embeddable (true) fallbacks preserve the previous client's
+// behavior for older API versions that omit those fields.
+func fromVM(vm *vmclient.Vm) *structs.VMInfo {
+	info := &structs.VMInfo{
+		URL:        derefStr(vm.Url),
+		Name:       derefStr(vm.Name),
+		DefaultURL: derefBool(vm.DefaultUrl, false),
+		Embeddable: derefBool(vm.Embeddable, true),
+		Connection: fromConnInfo(vm.ConsoleConnectionInfo),
+		Proxmox:    fromProxmoxInfo(vm.ProxmoxVmInfo),
 	}
 
-	embeddable := true
-	embeddableObj := asMap["embeddable"]
-
-	if embeddableObj != nil {
-		embeddable = embeddableObj.(bool)
+	if vm.Id != nil {
+		info.ID = vm.Id.String()
+	}
+	if vm.TeamIds != nil {
+		for _, t := range *vm.TeamIds {
+			info.TeamIDs = append(info.TeamIDs, t.String())
+		}
+	}
+	// UserID stays an interface{}: a string when set, nil otherwise (the resource
+	// type-asserts it to string).
+	if vm.UserId != nil {
+		info.UserID = vm.UserId.String()
 	}
 
-	// Unpack the map into a struct. We *should* be able to unmarshal right into the struct, but it's refusing
-	// to parse the userId field for some reason. This is logically the same, just rather inelegant
-	ret := &structs.VMInfo{
-		ID:         asMap["id"].(string),
-		URL:        asMap["url"].(string),
-		DefaultURL: defaultUrl,
-		Name:       asMap["name"].(string),
-		TeamIDs:    *teamsConverted,
-		UserID:     asMap["userId"],
-		Embeddable: embeddable,
-		Connection: connectionPtr,
-		Proxmox:    proxmoxPtr,
+	return info
+}
+
+func toConnInfo(c *structs.ConsoleConnection) *vmclient.ConsoleConnectionInfo {
+	if c == nil {
+		return nil
 	}
-	return ret
+	return &vmclient.ConsoleConnectionInfo{
+		Hostname: &c.Hostname,
+		Port:     &c.Port,
+		Protocol: &c.Protocol,
+		Username: &c.Username,
+		Password: &c.Password,
+	}
+}
+
+func fromConnInfo(c *vmclient.ConsoleConnectionInfo) *structs.ConsoleConnection {
+	if c == nil {
+		return nil
+	}
+	return &structs.ConsoleConnection{
+		Hostname: derefStr(c.Hostname),
+		Port:     derefStr(c.Port),
+		Protocol: derefStr(c.Protocol),
+		Username: derefStr(c.Username),
+		Password: derefStr(c.Password),
+	}
+}
+
+func toProxmoxInfo(p *structs.ProxmoxInfo) *vmclient.ProxmoxVmInfo {
+	if p == nil {
+		return nil
+	}
+	id := int32(p.Id)
+	node := p.Node
+	t := vmclient.ProxmoxVmType(p.Type)
+	return &vmclient.ProxmoxVmInfo{
+		Id:   &id,
+		Node: &node,
+		Type: &t,
+	}
+}
+
+func fromProxmoxInfo(p *vmclient.ProxmoxVmInfo) *structs.ProxmoxInfo {
+	if p == nil {
+		return nil
+	}
+	info := &structs.ProxmoxInfo{
+		Node: derefStr(p.Node),
+	}
+	if p.Id != nil {
+		info.Id = int(*p.Id)
+	}
+	if p.Type != nil {
+		info.Type = string(*p.Type)
+	}
+	return info
+}
+
+// toUUIDs parses a slice of string ids into generated UUIDs.
+func toUUIDs(ids []string) ([]uuid.UUID, error) {
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, s := range ids {
+		u, err := uuid.Parse(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, nil
+}
+
+// userIDString extracts a string user id from the VMInfo.UserID interface, which
+// is either a string or nil.
+func userIDString(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func derefStr(p *string) string {
+	if p != nil {
+		return *p
+	}
+	return ""
+}
+
+func derefBool(p *bool, def bool) bool {
+	if p != nil {
+		return *p
+	}
+	return def
 }
