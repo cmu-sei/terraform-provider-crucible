@@ -7,21 +7,21 @@ tasks:
       - go build .
 
   test:
-    desc: Run provider unit tests (acceptance steps are skipped without TF_ACC)
+    desc: Run offline unit tests (no live stack). Acceptance steps self-skip without TF_ACC.
     cmds:
-      - go test -v ./internal/provider/...
+      - go test -v ./...
 
   testacc:
     desc: >-
-      Run acceptance tests against a live Crucible stack (sets TF_ACC=1). Defaults
-      target the local crucible-development Aspire stack; see README (### Running
-      tests) for the full list of overridable TF_* variables.
+      Run the full test suite (unit + acceptance) against a live Crucible stack
+      (sets TF_ACC=1). Defaults target the local crucible-development Aspire stack;
+      see README (### Running tests) for the overridable TF_* variables.
     env:
       TF_ACC: "1"
     cmds:
       # -count=1 disables Go's test result cache so the live API is hit on every
       # run (otherwise an unchanged build prints a cached "ok" without running).
-      - go test -v -count=1 ./internal/provider/... -timeout 60m
+      - go test -v -count=1 ./... -timeout 60m
 
   clean:
     desc: Remove build artifacts
