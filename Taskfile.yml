@@ -12,20 +12,10 @@ tasks:
       - go test -v ./internal/provider/...
 
   testacc:
-    desc: |
-      Run acceptance tests against a live Crucible stack (TF_ACC=1 is set here).
-      Connection settings and TF_TEST_USER_ID DEFAULT to the local
-      crucible-development Aspire stack, so with that stack running the suite
-      works out of the box. Override any of these only for other environments:
-        Provider creds : TF_PROV_NAME TF_USERNAME TF_PASSWORD TF_AUTH_URL
-                         TF_TOK_URL TF_CLIENT_ID TF_CLIENT_SECRET
-        Endpoints      : TF_PLAYER_API_URL TF_VM_API_URL TF_CASTER_API_URL
-        Defaulted id   : TF_TEST_USER_ID (player_user; dev admin GUID)
-                         TF_TEST_NETWORK_* (view_network; placeholder strings)
-      Must be supplied (no dev default):
-        TF_TEST_PROJECT_ID  - Caster project GUID; crucible_vlan skips without it
-      Opt-in:
-        TF_TEST_UPGRADE=1   - old->new upgrade tests (also needs Registry access)
+    desc: >-
+      Run acceptance tests against a live Crucible stack (sets TF_ACC=1). Defaults
+      target the local crucible-development Aspire stack; see README (### Running
+      tests) for the full list of overridable TF_* variables.
     env:
       TF_ACC: "1"
     cmds:
