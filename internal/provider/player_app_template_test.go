@@ -31,7 +31,7 @@ import (
 // Resource is created, updated, and destroyed without error
 func TestAccAppTemplate(t *testing.T) {
 	var templateID string
-	cleanupAppTemplate(t, &templateID)
+	registerAppTemplateCleanup(t, &templateID)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.test"),
@@ -80,7 +80,7 @@ func TestAccAppTemplate(t *testing.T) {
 // AND a sibling must change.)
 func TestAccAppTemplateOmittedFieldsStable(t *testing.T) {
 	var templateID string
-	cleanupAppTemplate(t, &templateID)
+	registerAppTemplateCleanup(t, &templateID)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.minimal"),

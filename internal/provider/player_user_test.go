@@ -29,7 +29,7 @@ func TestAccPlayerUser(t *testing.T) {
 	role := envOrDefault("TF_TEST_USER_ROLE", "Administrator")
 	roleUpdated := envOrDefault("TF_TEST_USER_ROLE_UPDATED", "Content Developer")
 	sweepUser(t, userID)
-	cleanupUser(t, userID)
+	registerUserCleanup(t, userID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

@@ -31,7 +31,7 @@ const (
 // Expected behavior: resource is created, verified, and destroyed without error.
 func TestAccVMBasicSuccessful(t *testing.T) {
 	sweepVM(t, vmIDNormal)
-	cleanupVM(t, vmIDNormal)
+	registerVMCleanup(t, vmIDNormal)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
@@ -80,7 +80,7 @@ func TestAccVMBasicFail(t *testing.T) {
 // Test case for a VM that is created and then updated (name change).
 func TestAccVMUpdate(t *testing.T) {
 	sweepVM(t, vmIDNormal)
-	cleanupVM(t, vmIDNormal)
+	registerVMCleanup(t, vmIDNormal)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
@@ -113,8 +113,8 @@ func TestAccVMUpdate(t *testing.T) {
 func TestAccVMMultipleCreate(t *testing.T) {
 	sweepVM(t, vmIDFirst)
 	sweepVM(t, vmIDSecond)
-	cleanupVM(t, vmIDFirst)
-	cleanupVM(t, vmIDSecond)
+	registerVMCleanup(t, vmIDFirst)
+	registerVMCleanup(t, vmIDSecond)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy: resource.ComposeTestCheckFunc(
@@ -144,7 +144,7 @@ func TestAccVMMultipleCreate(t *testing.T) {
 // Test case for moving a VM between teams.
 func TestAccVMMoveTeams(t *testing.T) {
 	sweepVM(t, vmIDNormal)
-	cleanupVM(t, vmIDNormal)
+	registerVMCleanup(t, vmIDNormal)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
@@ -253,7 +253,7 @@ func TestAccVMConsoleURLStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000001"
 	const baseURL = "https://example.com/console"
 	sweepVM(t, vmID)
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -288,7 +288,7 @@ func TestAccVMProxmoxStable(t *testing.T) {
 	// use to avoid 500 "duplicate key" collisions.
 	const proxmoxID = "990002"
 	sweepVM(t, vmID)
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -319,7 +319,7 @@ func TestAccVMBasicStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000003"
 	const baseURL = "https://example.com/basic"
 	sweepVM(t, vmID)
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -351,7 +351,7 @@ func TestAccVMBasicStable(t *testing.T) {
 func TestAccVMDefaultURLStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000004"
 	sweepVM(t, vmID)
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -391,7 +391,7 @@ func TestAccVMMultiTeamStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000005"
 	const baseURL = "https://example.com/multiteam"
 	sweepVM(t, vmID)
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

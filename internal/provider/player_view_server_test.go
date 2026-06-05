@@ -34,7 +34,7 @@ import (
 // The resource is created, updated, and destroyed without error
 func TestAccEmptyView(t *testing.T) {
 	sweepViewByName(t, "test")
-	cleanupViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccViewDestroyed,
@@ -79,7 +79,7 @@ func TestAccEmptyView(t *testing.T) {
 // The resource is created, updated, and destroyed without error
 func TestAccViewWithApps(t *testing.T) {
 	sweepViewByName(t, "test")
-	cleanupViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccViewDestroyed,
@@ -110,7 +110,7 @@ func TestAccViewWithApps(t *testing.T) {
 // The resource is created, updated, and destroyed without error
 func TestAccViewWithTeams(t *testing.T) {
 	sweepViewByName(t, "test")
-	cleanupViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccViewDestroyed,
@@ -152,7 +152,7 @@ func TestAccViewWithTeams(t *testing.T) {
 // Resource is created, updated, and destroyed without error
 func TestAccViewWithUsers(t *testing.T) {
 	sweepViewByName(t, "test")
-	cleanupViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccViewDestroyed,
@@ -183,7 +183,7 @@ func TestAccViewWithUsers(t *testing.T) {
 // View can be created and updated without error
 func TestAccViewInstances(t *testing.T) {
 	sweepViewByName(t, "test")
-	cleanupViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccViewDestroyed,
@@ -245,7 +245,7 @@ func TestAccViewUserRoleStablePlan(t *testing.T) {
 	// user and 404s when added to a team.
 	userID := envOrDefault("TF_TEST_VIEW_USER_ID", "9b3b331c-10c1-448b-8114-21b2586d8e38")
 	sweepViewByName(t, "test")
-	cleanupViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

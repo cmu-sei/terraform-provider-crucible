@@ -49,8 +49,8 @@ func TestAccVlan(t *testing.T) {
 	sweepVlanByNumber(t, num1, partitionID)
 	sweepVlanByNumber(t, num2, partitionID)
 	// Post-run cleanup of whatever this run acquired (ids captured below).
-	cleanupVlan(t, &firstID)
-	cleanupVlan(t, &secondID)
+	registerVlanCleanup(t, &firstID)
+	registerVlanCleanup(t, &secondID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

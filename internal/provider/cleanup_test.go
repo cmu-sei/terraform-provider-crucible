@@ -63,7 +63,7 @@ func sweep(t *testing.T, label string, exists func() (bool, error), del func() e
 
 // --- fixed-handle resources (VM, user): delete directly by their known id ---
 
-func cleanupVM(t *testing.T, vmID string) {
+func registerVMCleanup(t *testing.T, vmID string) {
 	registerCleanup(t, "vm "+vmID,
 		func() (bool, error) { return api.VMExists(vmID, getMap()) },
 		func() error { return api.DeleteVM(vmID, getMap()) })
@@ -75,7 +75,7 @@ func sweepVM(t *testing.T, vmID string) {
 		func() error { return api.DeleteVM(vmID, getMap()) })
 }
 
-func cleanupUser(t *testing.T, userID string) {
+func registerUserCleanup(t *testing.T, userID string) {
 	registerCleanup(t, "user "+userID,
 		func() (bool, error) { return api.UserExists(userID, getMap()) },
 		func() error { return api.DeleteUser(userID, getMap()) })
@@ -89,21 +89,7 @@ func sweepUser(t *testing.T, userID string) {
 
 // --- computed-id resources: clean up an id captured during the run ---
 
-// cleanupView registers cleanup for a view whose id is captured (via captureID)
-// into idPtr during the create step. Deleting a view cascades its teams,
-// app-instances, and networks.
-func cleanupView(t *testing.T, idPtr *string) {
-	registerCleanup(t, "view (captured)",
-		func() (bool, error) {
-			if *idPtr == "" {
-				return false, nil
-			}
-			return api.ViewExists(*idPtr, getMap())
-		},
-		func() error { return api.DeleteView(*idPtr, getMap()) })
-}
-
-func cleanupAppTemplate(t *testing.T, idPtr *string) {
+func registerAppTemplateCleanup(t *testing.T, idPtr *string) {
 	registerCleanup(t, "app_template (captured)",
 		func() (bool, error) {
 			if *idPtr == "" {
@@ -121,18 +107,7 @@ func cleanupAppTemplate(t *testing.T, idPtr *string) {
 		func() error { return api.DeleteAppTemplate(*idPtr, getMap()) })
 }
 
-func cleanupViewNetwork(t *testing.T, viewIDPtr, idPtr *string) {
-	registerCleanup(t, "view_network (captured)",
-		func() (bool, error) {
-			if *viewIDPtr == "" || *idPtr == "" {
-				return false, nil
-			}
-			return api.ViewNetworkExists(*viewIDPtr, *idPtr, getMap())
-		},
-		func() error { return api.DeleteViewNetwork(*viewIDPtr, *idPtr, getMap()) })
-}
-
-func cleanupVlan(t *testing.T, idPtr *string) {
+func registerVlanCleanup(t *testing.T, idPtr *string) {
 	registerCleanup(t, "vlan (captured)",
 		func() (bool, error) {
 			if *idPtr == "" {
@@ -172,10 +147,10 @@ func sweepViewByName(t *testing.T, name string) {
 		})
 }
 
-// cleanupViewByName registers post-run cleanup for a view located by its fixed
+// registerViewCleanupByName registers post-run cleanup for a view located by its fixed
 // configured name. Used for the view tests, whose ids are computed but whose
 // names are stable. Deleting the view cascades teams/app-instances/networks.
-func cleanupViewByName(t *testing.T, name string) {
+func registerViewCleanupByName(t *testing.T, name string) {
 	registerCleanup(t, "view "+name,
 		func() (bool, error) {
 			id, err := api.FindViewByName(name, getMap())

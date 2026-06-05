@@ -178,7 +178,7 @@ func upgradeSteps(config string) []resource.TestStep {
 func TestAccUpgradeViewWithTeams(t *testing.T) {
 	upgradeProviderEnabled(t)
 	sweepViewByName(t, "test")
-	cleanupViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewDestroyed,
@@ -192,7 +192,7 @@ func TestAccUpgradeVMConsole(t *testing.T) {
 	upgradeProviderEnabled(t)
 
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000001"
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 	sweepVM(t, vmID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
@@ -208,7 +208,7 @@ func TestAccUpgradeVMProxmox(t *testing.T) {
 	// Test-specific proxmox id: it is a unique server-side PK, so avoid colliding
 	// with other fixtures / test/main.tf.
 	sweepVM(t, vmID)
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", "990010")),
@@ -222,7 +222,7 @@ func TestAccUpgradeVMMultiTeam(t *testing.T) {
 
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000003"
 	sweepVM(t, vmID)
-	cleanupVM(t, vmID)
+	registerVMCleanup(t, vmID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmMultiTeamConfig(vmID, "https://example.com/multiteam")),
@@ -236,7 +236,7 @@ func TestAccUpgradeUser(t *testing.T) {
 	userID := testEnv("TF_TEST_USER_ID")
 	role := envOrDefault("TF_TEST_USER_ROLE", "Administrator")
 	sweepUser(t, userID)
-	cleanupUser(t, userID)
+	registerUserCleanup(t, userID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccUserDestroyed(userID),
 		Steps:        upgradeSteps(correctCreds + userConfig(userID, "acc-upgrade-user", role)),
@@ -265,7 +265,7 @@ func TestAccUpgradeViewNetwork(t *testing.T) {
 	instanceID := envOrDefault("TF_TEST_NETWORK_PROVIDER_INSTANCE_ID", "acc-test-instance")
 	networkID := envOrDefault("TF_TEST_NETWORK_ID", "acc-test-network")
 	sweepViewByName(t, "acc-test-net-multi-view")
-	cleanupViewByName(t, "acc-test-net-multi-view")
+	registerViewCleanupByName(t, "acc-test-net-multi-view")
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewNetworkDestroyed("crucible_player_view_network.multi"),
 		Steps:        upgradeSteps(correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID)),
