@@ -131,6 +131,11 @@ func DeleteAppTemplate(id string, m map[string]string) error {
 }
 
 // AppTemplateExists returns whether a template exists.
+//
+// The current Player API signals a missing template as 200 with an empty body
+// (not 404), so checking the status code alone would always report "exists".
+// Treat BOTH a 404 and a 200-with-empty-body as gone, so this keeps working if
+// the API later switches to returning 404.
 func AppTemplateExists(id string, m map[string]string) (bool, error) {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
@@ -146,7 +151,14 @@ func AppTemplateExists(id string, m map[string]string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return resp.StatusCode() != http.StatusNotFound, nil
+	if resp.StatusCode() == http.StatusNotFound {
+		return false, nil // future-proof: API may switch to 404
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return false, fmt.Errorf("Player API returned status code %d when checking template existence", resp.StatusCode())
+	}
+	// The current API returns 200 with an empty body for a missing template.
+	return resp.JSON200 != nil, nil
 }
 
 // fromAppTemplate maps a generated ApplicationTemplate onto the provider struct.

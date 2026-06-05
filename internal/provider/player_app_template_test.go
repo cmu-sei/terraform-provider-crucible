@@ -110,6 +110,45 @@ func TestAccAppTemplateOmittedFieldsStable(t *testing.T) {
 	})
 }
 
+// TestAccAppTemplateDetectsExternalDelete is the regression test for the bug
+// where Read could never detect an out-of-band deletion: the Player API returns
+// 200-with-empty-body (not 404) for a missing template, so the old existence
+// check (status != 404) was always true and the resource was never removed from
+// state. Step 1 creates the template; step 2 (PreConfig) deletes it directly via
+// the API, then asserts the refresh-driven plan re-CREATES it. With the bug,
+// Read would instead reload an empty-named template and plan an Update (or empty
+// plan), so ExpectResourceAction(Create) fails.
+func TestAccAppTemplateDetectsExternalDelete(t *testing.T) {
+	var templateID string
+	registerAppTemplateCleanup(t, &templateID)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.minimal"),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + appTemplateMinimalConfig("acc-extdel-template"),
+				Check:  captureID("crucible_player_application_template.minimal", "", &templateID),
+			},
+			{
+				// Delete the template out of band, then re-plan the same config.
+				// Read must notice it's gone and plan a fresh create.
+				PreConfig: func() {
+					if err := api.DeleteAppTemplate(templateID, getMap()); err != nil {
+						t.Fatalf("failed to delete template out of band: %v", err)
+					}
+				},
+				Config: correctCreds + appTemplateMinimalConfig("acc-extdel-template"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("crucible_player_application_template.minimal",
+							plancheck.ResourceActionCreate),
+					},
+				},
+			},
+		},
+	})
+}
+
 func appTemplateMinimalConfig(name string) string {
 	return fmt.Sprintf(`resource "crucible_player_application_template" "minimal" {
 	name = "%s"
