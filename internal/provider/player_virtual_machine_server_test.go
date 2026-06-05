@@ -13,6 +13,7 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
@@ -212,4 +213,252 @@ func testAccVMDestroyed(id string) resource.TestCheckFunc {
 		}
 		return nil
 	}
+}
+
+// vmRegressionTeamID is the team id the existing VM acceptance tests use; the
+// per-shape plan-stability tests below reuse it.
+const vmRegressionTeamID = "c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"
+
+// The plan-stability tests below build their HCL inline (rather than via the
+// configs/testConfigs.json + getVMResource path) because that helper does not
+// render the console_connection_info / proxmox_vm_info nested blocks, and these
+// tests need them. They follow the viewOneUserConfig precedent in
+// player_view_server_test.go.
+
+// TestAccVMConsoleURLStable is the regression test for the reported bug: a VM
+// with console_connection_info and a base url. The VM API appends a Guacamole
+// "/#/client/<token>" fragment to the url on read; without stripping it (see
+// consoleURLBase) the first apply fails with "Provider produced inconsistent
+// result after apply". Step 1 reproduces that; step 2 asserts the second plan is
+// empty.
+func TestAccVMConsoleURLStable(t *testing.T) {
+	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000001"
+	const baseURL = "https://example.com/console"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccVMDestroyed(vmID),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + vmConsoleConfig(vmID, baseURL),
+				Check: resource.ComposeTestCheckFunc(
+					// url is the configured base, with no token appended.
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regconsole", "url", baseURL),
+				),
+			},
+			{
+				Config: correctCreds + vmConsoleConfig(vmID, baseURL),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+			},
+		},
+	})
+}
+
+// TestAccVMProxmoxStable covers the proxmox_vm_info shape and guards the
+// proxmox id/type plan modifiers against re-planning on an unchanged config.
+func TestAccVMProxmoxStable(t *testing.T) {
+	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000002"
+	// The proxmox id has a unique primary key server-side, so a VM holding it
+	// cannot coexist with any other (test fixtures, test/main.tf, leftover
+	// orphans). Use a high, test-specific id that real configs are unlikely to
+	// use to avoid 500 "duplicate key" collisions.
+	const proxmoxID = "990002"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccVMDestroyed(vmID),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", proxmoxID),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regproxmox", "proxmox_vm_info.0.id", proxmoxID),
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regproxmox", "proxmox_vm_info.0.type", "QEMU"),
+				),
+			},
+			{
+				Config: correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", proxmoxID),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+			},
+		},
+	})
+}
+
+// TestAccVMBasicStable covers the simplest shape (a base url, no nested blocks)
+// and asserts the second plan is empty.
+func TestAccVMBasicStable(t *testing.T) {
+	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000003"
+	const baseURL = "https://example.com/basic"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccVMDestroyed(vmID),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + vmBasicConfig(vmID, baseURL),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regbasic", "url", baseURL),
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regbasic", "default_url", "false"),
+				),
+			},
+			{
+				Config: correctCreds + vmBasicConfig(vmID, baseURL),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+			},
+		},
+	})
+}
+
+// TestAccVMDefaultURLStable covers the empty-url path: with no url the API sets
+// default_url=true and computes the url itself (no token appended). This guards
+// the empty-url UseStateForUnknown behavior the old SDKv1 DiffSuppressFunc
+// covered. This is the shape test/main.tf's console VM uses (url commented out).
+func TestAccVMDefaultURLStable(t *testing.T) {
+	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000004"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccVMDestroyed(vmID),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + vmDefaultURLConfig(vmID),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regdefault", "default_url", "true"),
+				),
+			},
+			{
+				Config: correctCreds + vmDefaultURLConfig(vmID),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+			},
+		},
+	})
+}
+
+// secondVMRegressionTeamID is a second real team id (the one TestAccVMMoveTeams
+// uses) for multi-team coverage. It sorts BEFORE vmRegressionTeamID
+// ("8efd..." < "c0a1..."), so listing them in the opposite order in config makes
+// the test fail if read() ever reorders team_ids (e.g. by sorting) relative to
+// config — the bug behind the reported "inconsistent result ... team_ids[n]".
+const secondVMRegressionTeamID = "8efdcbd3-daa5-4cb4-b62b-338fe7bf3351"
+
+// TestAccVMMultiTeamStable guards multi-team ordering: a VM in two teams whose
+// configured order is the reverse of their sorted order. read() must carry the
+// configured order into state, not a sorted one, or apply fails with
+// "inconsistent result after apply" on team_ids. A single-team test cannot catch
+// this (sorting a one-element list is a no-op).
+func TestAccVMMultiTeamStable(t *testing.T) {
+	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000005"
+	const baseURL = "https://example.com/multiteam"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccVMDestroyed(vmID),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + vmMultiTeamConfig(vmID, baseURL),
+				Check: resource.ComposeTestCheckFunc(
+					// Config order is [vmRegressionTeamID, secondVMRegressionTeamID]
+					// (the reverse of sorted order); state must preserve it.
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.0", vmRegressionTeamID),
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.1", secondVMRegressionTeamID),
+				),
+			},
+			{
+				Config: correctCreds + vmMultiTeamConfig(vmID, baseURL),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+			},
+		},
+	})
+}
+
+// --- inline config builders for the per-shape plan-stability tests ---
+
+func vmMultiTeamConfig(vmID, url string) string {
+	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regmulti" {
+	vm_id    = "%s"
+	url      = "%s"
+	name     = "tf-acc-multiteam"
+	team_ids = ["%s", "%s"]
+}
+`, vmID, url, vmRegressionTeamID, secondVMRegressionTeamID)
+}
+
+func vmConsoleConfig(vmID, url string) string {
+	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regconsole" {
+	vm_id    = "%s"
+	url      = "%s"
+	name     = "tf-acc-console"
+	team_ids = ["%s"]
+
+	console_connection_info {
+		hostname = "10.0.0.10"
+		port     = "3389"
+		protocol = "rdp"
+		username = "administrator"
+		password = "changeme"
+	}
+}
+`, vmID, url, vmRegressionTeamID)
+}
+
+func vmProxmoxConfig(vmID, url, proxmoxID string) string {
+	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regproxmox" {
+	vm_id    = "%s"
+	url      = "%s"
+	name     = "tf-acc-proxmox"
+	team_ids = ["%s"]
+
+	proxmox_vm_info {
+		id   = "%s"
+		node = "pve1"
+		type = "QEMU"
+	}
+}
+`, vmID, url, vmRegressionTeamID, proxmoxID)
+}
+
+func vmBasicConfig(vmID, url string) string {
+	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regbasic" {
+	vm_id    = "%s"
+	url      = "%s"
+	name     = "tf-acc-basic"
+	team_ids = ["%s"]
+}
+`, vmID, url, vmRegressionTeamID)
+}
+
+func vmDefaultURLConfig(vmID string) string {
+	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regdefault" {
+	vm_id    = "%s"
+	name     = "tf-acc-default-url"
+	team_ids = ["%s"]
+
+	console_connection_info {
+		hostname = "10.0.0.20"
+		port     = "3389"
+		protocol = "rdp"
+		username = "administrator"
+		password = "changeme"
+	}
+}
+`, vmID, vmRegressionTeamID)
 }

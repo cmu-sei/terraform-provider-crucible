@@ -121,6 +121,19 @@ func TestAccViewWithTeams(t *testing.T) {
 					testAccVerifyLocalView("crucible_player_view.teams", teamViewExpectedUpdated),
 					testAccVerifyRemoteView(teamViewExpectedUpdated)),
 			},
+			{
+				// Plan-stability guard: re-applying the same config must produce
+				// an empty plan. Exercises the view's Optional+Computed fields
+				// (status, team role, app_instance display_order) and the
+				// config-order-preserving sort of teams/users/instances/
+				// permissions on read.
+				Config: correctCreds + configViewTeamsUpdated,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+			},
 		},
 	})
 }

@@ -6,7 +6,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
@@ -380,17 +379,22 @@ func (r *virtualMachineResource) read(ctx context.Context, m *vmModel) diag.Diag
 		return diags
 	}
 
-	// Sort team IDs for consistent state.
-	sort.Strings(info.TeamIDs)
-
 	m.ID = types.StringValue(info.ID)
 	m.VMID = types.StringValue(info.ID)
-	m.URL = types.StringValue(info.URL)
+	m.URL = types.StringValue(consoleURLBase(info.URL))
 	m.DefaultURL = types.BoolValue(info.DefaultURL)
 	m.Name = types.StringValue(info.Name)
 	m.Embeddable = types.BoolValue(info.Embeddable)
 
-	teamIDs, d := types.ListValueFrom(ctx, types.StringType, info.TeamIDs)
+	// team_ids is a Required list, so the value carried into state must match
+	// the configured order; the API returns team ids in an arbitrary order.
+	// Preserve the order already in the model (config order on create, state
+	// order on refresh) for ids the API still reports, and append any genuinely
+	// new ones deterministically. (Sorting here would reorder the list relative
+	// to config and trigger "inconsistent result after apply".)
+	priorTeamIDs, d := toStringSlice(ctx, m.TeamIDs)
+	diags.Append(d...)
+	teamIDs, d := types.ListValueFrom(ctx, types.StringType, orderTeamIDs(priorTeamIDs, info.TeamIDs))
 	diags.Append(d...)
 	m.TeamIDs = teamIDs
 
@@ -510,6 +514,20 @@ func flattenProxmox(ctx context.Context, proxmox *structs.ProxmoxInfo) (types.Li
 	list, d := types.ListValue(objType, []attr.Value{obj})
 	diags.Append(d...)
 	return list, diags
+}
+
+// consoleURLBase strips the Guacamole client fragment the VM API appends to a
+// VM url when console_connection_info is set (".../#/client/<token>"), so the
+// url carried in state matches the configured base value rather than the
+// API-rewritten one. The token is composed at response time (see the VM API's
+// Vm.GetUrl); without stripping it, Terraform reports "inconsistent result after
+// apply" because the planned base url differs from the read-back tokenized url.
+// A url without the fragment is returned unchanged.
+func consoleURLBase(url string) string {
+	if i := strings.Index(url, "/#/client/"); i != -1 {
+		return url[:i]
+	}
+	return url
 }
 
 // userIDValue mirrors the SDKv1 behavior of sending a nil user_id when empty.

@@ -10,6 +10,7 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
@@ -54,6 +55,40 @@ func TestAccViewNetwork(t *testing.T) {
 	})
 }
 
+// TestAccViewNetworkMultiTeamStable is the regression test for the view_network
+// team_ids ordering bug (same class as the VM team_ids bug): the API returns
+// team ids in arbitrary order, so read() must preserve the configured order or
+// apply fails with "inconsistent result after apply". The config creates a view
+// with two teams and assigns the network to both in a fixed order; step 2
+// asserts the second plan is empty.
+func TestAccViewNetworkMultiTeamStable(t *testing.T) {
+	providerType := envOrDefault("TF_TEST_NETWORK_PROVIDER_TYPE", "Unknown")
+	instanceID := envOrDefault("TF_TEST_NETWORK_PROVIDER_INSTANCE_ID", "acc-test-instance")
+	networkID := envOrDefault("TF_TEST_NETWORK_ID", "acc-test-network")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewNetworkDestroyed("crucible_player_view_network.multi"),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view_network.multi", "team_ids.#", "2"),
+					testAccViewNetworkExists("crucible_player_view_network.multi"),
+				),
+			},
+			{
+				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+			},
+		},
+	})
+}
+
 func viewNetworkConfig(providerType, instanceID, networkID, name string) string {
 	// create_admin_team must be true: the view network is created with the
 	// provider's own credentials, and the VM API requires the caller to be a
@@ -73,6 +108,39 @@ func viewNetworkConfig(providerType, instanceID, networkID, name string) string 
 		name                 = "%s"
 	}
 	`, providerType, instanceID, networkID, name)
+}
+
+func viewNetworkMultiTeamConfig(providerType, instanceID, networkID string) string {
+	// Two teams; assign the network to both in reverse-sorted order so the
+	// configured order is guaranteed to differ from ascending sort order. The
+	// old read() sorted team_ids ascending, which would then mismatch this
+	// descending config order and fail with "inconsistent result after apply".
+	return fmt.Sprintf(`resource "crucible_player_view" "net_multi_parent" {
+		name              = "acc-test-net-multi-view"
+		description       = "view for view_network multi-team test"
+		status            = "Active"
+		create_admin_team = true
+
+		team {
+			name = "net-team-a"
+		}
+		team {
+			name = "net-team-b"
+		}
+	}
+
+	resource "crucible_player_view_network" "multi" {
+		view_id              = crucible_player_view.net_multi_parent.id
+		provider_type        = "%s"
+		provider_instance_id = "%s"
+		network_id           = "%s"
+		name                 = "acc-test-net-multi"
+		team_ids = reverse(sort([
+			crucible_player_view.net_multi_parent.team[0].team_id,
+			crucible_player_view.net_multi_parent.team[1].team_id,
+		]))
+	}
+	`, providerType, instanceID, networkID)
 }
 
 // testAccViewNetworkExists verifies the view network exists in the API.

@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"regexp"
+	"sort"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -76,4 +77,36 @@ func toStringSlice(ctx context.Context, list types.List) ([]string, diag.Diagnos
 	}
 	diags = list.ElementsAs(ctx, &out, false)
 	return out, diags
+}
+
+// orderTeamIDs returns a resource's team ids in a stable order for state: ids
+// that were already present in prior (config/state) order come first in that
+// order, followed by any ids the API reports that weren't there before, sorted
+// for determinism. The Crucible APIs return team ids in an arbitrary order;
+// keeping the configured order avoids "inconsistent result after apply" on a
+// Required/ordered team_ids list, while still surfacing out-of-band team
+// membership changes on refresh. Shared by the VM and view-network resources.
+func orderTeamIDs(prior, fromAPI []string) []string {
+	apiSet := make(map[string]struct{}, len(fromAPI))
+	for _, id := range fromAPI {
+		apiSet[id] = struct{}{}
+	}
+
+	out := make([]string, 0, len(fromAPI))
+	seen := make(map[string]struct{}, len(fromAPI))
+	for _, id := range prior {
+		if _, ok := apiSet[id]; ok {
+			out = append(out, id)
+			seen[id] = struct{}{}
+		}
+	}
+
+	extra := make([]string, 0)
+	for _, id := range fromAPI {
+		if _, ok := seen[id]; !ok {
+			extra = append(extra, id)
+		}
+	}
+	sort.Strings(extra)
+	return append(out, extra...)
 }

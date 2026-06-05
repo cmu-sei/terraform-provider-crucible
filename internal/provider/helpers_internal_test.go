@@ -335,6 +335,85 @@ func TestIfaceStr(t *testing.T) {
 	}
 }
 
+// --- consoleURLBase ---
+
+func TestConsoleURLBase(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"base url with guacamole token", "https://example.com/console/#/client/ZTNjY2NlMQ==", "https://example.com/console"},
+		{"url without fragment unchanged", "https://example.com/console", "https://example.com/console"},
+		{"empty string", "", ""},
+		{"fragment at root", "https://example.com/#/client/abc", "https://example.com"},
+		{"only the fragment", "/#/client/abc", ""},
+		{"everything after fragment removed", "https://example.com/c/#/client/tok/extra?q=1", "https://example.com/c"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := consoleURLBase(tc.in); got != tc.want {
+				t.Errorf("consoleURLBase(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- orderTeamIDs ---
+
+func TestOrderTeamIDs(t *testing.T) {
+	tests := []struct {
+		name    string
+		prior   []string
+		fromAPI []string
+		want    []string
+	}{
+		{
+			name:    "preserves prior order regardless of API order",
+			prior:   []string{"a", "b"},
+			fromAPI: []string{"b", "a"},
+			want:    []string{"a", "b"},
+		},
+		{
+			name:    "create with empty prior sorts API ids deterministically",
+			prior:   []string{},
+			fromAPI: []string{"b", "a"},
+			want:    []string{"a", "b"},
+		},
+		{
+			name:    "new id added out of band appended after prior, sorted",
+			prior:   []string{"b"},
+			fromAPI: []string{"b", "a", "c"},
+			want:    []string{"b", "a", "c"},
+		},
+		{
+			name:    "id removed out of band drops from result",
+			prior:   []string{"a", "b", "c"},
+			fromAPI: []string{"a", "c"},
+			want:    []string{"a", "c"},
+		},
+		{
+			name:    "single id unchanged",
+			prior:   []string{"a"},
+			fromAPI: []string{"a"},
+			want:    []string{"a"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := orderTeamIDs(tc.prior, tc.fromAPI)
+			if len(got) != len(tc.want) {
+				t.Fatalf("orderTeamIDs(%v,%v) = %v, want %v", tc.prior, tc.fromAPI, got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("orderTeamIDs(%v,%v)[%d] = %q, want %q (full=%v)", tc.prior, tc.fromAPI, i, got[i], tc.want[i], got)
+				}
+			}
+		})
+	}
+}
+
 // --- shared assert helper ---
 
 func assertIntMap(t *testing.T, got, want map[string]int) {

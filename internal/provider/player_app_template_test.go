@@ -12,7 +12,10 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 // Test case for the creation and updating of an application template resource
@@ -62,6 +65,50 @@ func TestAccAppTemplate(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestAccAppTemplateOmittedFieldsStable guards the Optional+Computed fields
+// (url/icon/embeddable/load_in_background) that the API echoes back. The config
+// sets ONLY name and leaves those fields omitted, then EDITS name on the second
+// step. Editing a sibling attribute is what triggers the bug: without
+// UseStateForUnknown the omitted computed fields re-plan as "known after apply".
+// The plan check asserts url stays known, so a missing modifier fails the test.
+// (Re-applying the SAME config would not catch it — the field must be omitted
+// AND a sibling must change.)
+func TestAccAppTemplateOmittedFieldsStable(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.minimal"),
+		Steps: []resource.TestStep{
+			{
+				Config: correctCreds + appTemplateMinimalConfig("acc-min-template"),
+			},
+			{
+				// Edit name (a sibling); the omitted url/icon/embeddable/
+				// load_in_background must stay known, carried from state.
+				Config: correctCreds + appTemplateMinimalConfig("acc-min-template-2"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectKnownValue("crucible_player_application_template.minimal",
+							tfjsonpath.New("url"), knownvalue.StringExact("")),
+						plancheck.ExpectKnownValue("crucible_player_application_template.minimal",
+							tfjsonpath.New("icon"), knownvalue.StringExact("")),
+						plancheck.ExpectKnownValue("crucible_player_application_template.minimal",
+							tfjsonpath.New("embeddable"), knownvalue.Bool(false)),
+						plancheck.ExpectKnownValue("crucible_player_application_template.minimal",
+							tfjsonpath.New("load_in_background"), knownvalue.Bool(false)),
+					},
+				},
+			},
+		},
+	})
+}
+
+func appTemplateMinimalConfig(name string) string {
+	return fmt.Sprintf(`resource "crucible_player_application_template" "minimal" {
+	name = "%s"
+}
+`, name)
 }
 
 // testAccTemplateDestroyed asserts the application template no longer exists.

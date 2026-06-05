@@ -10,7 +10,10 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 // TestAccPlayerUser covers create, role update, import, and destroy for the
@@ -47,6 +50,22 @@ func TestAccPlayerUser(t *testing.T) {
 				),
 			},
 			{
+				// Plan-stability guard for the role modifier. role is omitted
+				// here and name (a sibling) is edited: without
+				// UseStateForUnknown the Optional+Computed role would re-plan as
+				// "known after apply". Asserting role stays known catches a
+				// missing modifier. (role is resolved id->name on read; the prior
+				// value must carry forward.) Re-applying the same config would not
+				// catch this — role must be omitted AND a sibling must change.
+				Config: correctCreds + userConfigNoRole(userID, "acc-test-user-2"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectKnownValue("crucible_player_user.test",
+							tfjsonpath.New("role"), knownvalue.NotNull()),
+					},
+				},
+			},
+			{
 				ResourceName:      "crucible_player_user.test",
 				ImportState:       true,
 				ImportStateVerify: true,
@@ -65,6 +84,16 @@ func userConfig(userID, name, role string) string {
 		role    = "%s"
 	}
 	`, userID, name, role)
+}
+
+// userConfigNoRole omits role so the Optional+Computed role plan modifier is
+// exercised when a sibling (name) changes.
+func userConfigNoRole(userID, name string) string {
+	return fmt.Sprintf(`resource "crucible_player_user" "test" {
+		user_id = "%s"
+		name    = "%s"
+	}
+	`, userID, name)
 }
 
 // testAccUserRemoteRole verifies the user's role resolves to the expected name

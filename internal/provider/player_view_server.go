@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -134,6 +135,9 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional: true,
 			},
 			"status": schema.StringAttribute{
+				// Optional+Computed with a Default: the default supplies the value
+				// when config omits it, so no UseStateForUnknown is needed (the
+				// plan is never unknown). Verified by mutation test.
 				Optional: true,
 				Computed: true,
 				Default:  stringdefault.StaticString("Active"),
@@ -169,6 +173,8 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 							Required: true,
 						},
 						"role": schema.StringAttribute{
+							// Has a Default, which covers the omitted case, so no
+							// UseStateForUnknown is needed. Verified by mutation test.
 							Optional: true,
 							Computed: true,
 							Default:  stringdefault.StaticString("View Member"),
@@ -186,8 +192,16 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 										Required: true,
 									},
 									"display_order": schema.Float64Attribute{
+										// Optional+Computed with NO default, so when
+										// config omits it the prior value must be
+										// carried forward or it re-plans as "known
+										// after apply" on a sibling edit. Verified by
+										// mutation test.
 										Optional: true,
 										Computed: true,
+										PlanModifiers: []planmodifier.Float64{
+											float64planmodifier.UseStateForUnknown(),
+										},
 									},
 									"id": computedStringWithUseState(),
 								},

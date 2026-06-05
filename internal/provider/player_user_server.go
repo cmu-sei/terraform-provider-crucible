@@ -83,8 +83,15 @@ func (r *userResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Required: true,
 			},
 			"role": schema.StringAttribute{
+				// Optional+Computed: read() resolves the API's role id back to a
+				// role name. That round-trips stably, so carry the prior value
+				// forward on update (UseStateForUnknown) rather than re-planning
+				// it as "known after apply" when the config omits role.
 				Optional: true,
 				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}

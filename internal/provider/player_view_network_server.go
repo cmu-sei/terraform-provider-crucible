@@ -6,7 +6,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -102,6 +102,9 @@ func (r *viewNetworkResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Optional:    true,
 				Computed:    true,
 				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -249,9 +252,12 @@ func (r *viewNetworkResource) read(ctx context.Context, m *viewNetworkModel) dia
 	m.NetworkID = types.StringValue(network.NetworkId)
 	m.Name = types.StringValue(network.Name)
 
-	// Sort team IDs for consistent state.
-	sort.Strings(network.TeamIds)
-	teamIDs, d := types.ListValueFrom(ctx, types.StringType, network.TeamIds)
+	// team_ids: the API returns ids in arbitrary order, so preserve the order
+	// already in the model (config order on create, state order on refresh) to
+	// avoid "inconsistent result after apply"; see orderTeamIDs.
+	priorTeamIDs, d := toStringSlice(ctx, m.TeamIDs)
+	diags.Append(d...)
+	teamIDs, d := types.ListValueFrom(ctx, types.StringType, orderTeamIDs(priorTeamIDs, network.TeamIds))
 	diags.Append(d...)
 	m.TeamIDs = teamIDs
 

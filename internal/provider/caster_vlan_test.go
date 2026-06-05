@@ -11,6 +11,7 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
@@ -65,6 +66,17 @@ func TestAccVlan(t *testing.T) {
 						return nil
 					},
 				),
+			},
+			{
+				// Plan-stability guard: re-applying the same config must produce
+				// an empty plan (idempotence). The computed partition_id and the
+				// acquired vlan must not re-plan.
+				Config: correctCreds + vlanConfig(partitionID, vlanID2),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
 			},
 		},
 	})
