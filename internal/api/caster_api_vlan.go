@@ -101,6 +101,29 @@ func ReadVlan(id string, m map[string]string) (*structs.Vlan, error) {
 	return fromVlan(resp.JSON200), nil
 }
 
+// VlanExists reports whether a VLAN record still exists in Caster. A released
+// VLAN persists in the pool (with InUse=false), but the record can disappear
+// entirely (404) if its containing pool or partition is deleted out of band, so
+// the resource Read uses this to remove the resource from state rather than
+// erroring. Mirrors the other *Exists helpers.
+func VlanExists(id string, m map[string]string) (bool, error) {
+	client, err := casterclient.NewAuthed(m)
+	if err != nil {
+		return false, err
+	}
+
+	vlanID, err := uuid.Parse(id)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := client.GetVlanWithResponse(context.Background(), vlanID)
+	if err != nil {
+		return false, err
+	}
+	return resp.StatusCode() != http.StatusNotFound, nil
+}
+
 // DeleteVlan releases a vlan back into the pool.
 //
 // Param id: The id of the vlan to release

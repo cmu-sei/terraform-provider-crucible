@@ -155,6 +155,18 @@ func (r *vlanResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
+	// The VLAN record can be removed entirely (404) if its pool/partition is
+	// deleted out of band; treat that as gone rather than erroring.
+	exists, err := api.VlanExists(state.ID.ValueString(), r.cfg)
+	if err != nil {
+		resp.Diagnostics.AddError("Error checking vlan existence", err.Error())
+		return
+	}
+	if !exists {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
 	vlan, err := api.ReadVlan(state.ID.ValueString(), r.cfg)
 	if err != nil {
 		resp.Diagnostics.AddError("Error reading vlan", err.Error())
