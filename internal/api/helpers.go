@@ -3,9 +3,11 @@
 
 package api
 
+import "github.com/google/uuid"
+
 // Small pointer/deref helpers shared by the generated-client adapters in this
 // package. The oapi-codegen models use pointers for optional fields; these keep
-// the conversion code terse. derefStr/derefBool/toUUIDs live in vm_api.go.
+// the conversion code terse.
 
 func strPtr(s string) *string { return &s }
 
@@ -67,4 +69,33 @@ func derefFloat32(p *float32) float32 {
 		return *p
 	}
 	return 0
+}
+
+// derefStr returns the string value of p, or "" when nil.
+func derefStr(p *string) string {
+	if p != nil {
+		return *p
+	}
+	return ""
+}
+
+// derefBool returns the bool value of p, or def when nil.
+func derefBool(p *bool, def bool) bool {
+	if p != nil {
+		return *p
+	}
+	return def
+}
+
+// toUUIDs parses a slice of string ids into generated UUIDs.
+func toUUIDs(ids []string) ([]uuid.UUID, error) {
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, s := range ids {
+		u, err := uuid.Parse(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, nil
 }

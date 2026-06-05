@@ -379,19 +379,6 @@ func fromProxmoxInfo(p *vmclient.ProxmoxVmInfo) *structs.ProxmoxInfo {
 	return info
 }
 
-// toUUIDs parses a slice of string ids into generated UUIDs.
-func toUUIDs(ids []string) ([]uuid.UUID, error) {
-	out := make([]uuid.UUID, 0, len(ids))
-	for _, s := range ids {
-		u, err := uuid.Parse(s)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, u)
-	}
-	return out, nil
-}
-
 // userIDString extracts a string user id from the VMInfo.UserID interface, which
 // is either a string or nil.
 func userIDString(v interface{}) string {
@@ -399,18 +386,4 @@ func userIDString(v interface{}) string {
 		return s
 	}
 	return ""
-}
-
-func derefStr(p *string) string {
-	if p != nil {
-		return *p
-	}
-	return ""
-}
-
-func derefBool(p *bool, def bool) bool {
-	if p != nil {
-		return *p
-	}
-	return def
 }
