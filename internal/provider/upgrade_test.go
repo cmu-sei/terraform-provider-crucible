@@ -4,8 +4,15 @@
 package provider_test
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -19,10 +26,67 @@ const oldProviderVersion = "2.5.0"
 // upgradeProviderEnabled reports whether the upgrade tests should run. They pull
 // the old provider from the Terraform Registry, so they need network access in
 // addition to the live Crucible APIs; gate them behind TF_TEST_UPGRADE=1.
+//
+// Even when enabled, the old provider download can flake (registry/GitHub
+// release unreachable). A flaky download must not fail the suite, so we probe
+// once whether the old provider can be obtained and t.Skip if not — real drift
+// is still tested whenever the provider is reachable.
 func upgradeProviderEnabled(t *testing.T) {
 	if os.Getenv("TF_TEST_UPGRADE") != "1" {
 		t.Skip("TF_TEST_UPGRADE != 1; skipping old->new provider upgrade test")
 	}
+	if reason := oldProviderUnavailable(); reason != "" {
+		t.Skipf("skipping upgrade test: old provider %s unavailable: %s", oldProviderVersion, reason)
+	}
+}
+
+// oldProviderProbe memoizes a one-time check that the old published provider can
+// be downloaded, so a registry/network blip skips the upgrade suite instead of
+// failing it. Empty string means available.
+var (
+	oldProviderProbeOnce   sync.Once
+	oldProviderProbeReason string
+)
+
+func oldProviderUnavailable() string {
+	oldProviderProbeOnce.Do(func() {
+		tf, err := exec.LookPath("terraform")
+		if err != nil {
+			oldProviderProbeReason = "terraform binary not found on PATH"
+			return
+		}
+		dir, err := os.MkdirTemp("", "crucible-upgrade-probe-")
+		if err != nil {
+			oldProviderProbeReason = "could not create temp probe dir: " + err.Error()
+			return
+		}
+		defer os.RemoveAll(dir)
+
+		cfg := fmt.Sprintf(`terraform {
+  required_providers {
+    crucible = {
+      source  = "cmu-sei/crucible"
+      version = "%s"
+    }
+  }
+}
+`, oldProviderVersion)
+		if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(cfg), 0o644); err != nil {
+			oldProviderProbeReason = "could not write probe config: " + err.Error()
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		// -backend=false keeps this to just provider installation. TF_PLUGIN_CACHE_DIR
+		// (set by `task testacc`) makes this a no-op once the provider is cached.
+		cmd := exec.CommandContext(ctx, tf, "init", "-backend=false", "-input=false", "-no-color")
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			oldProviderProbeReason = fmt.Sprintf("terraform init could not install it: %v\n%s", err, out)
+		}
+	})
+	return oldProviderProbeReason
 }
 
 // externalOldProvider returns the ExternalProviders map pinning the old
@@ -113,6 +177,8 @@ func upgradeSteps(config string) []resource.TestStep {
 // app_instance/user blocks across the SDKv1->Framework migration.
 func TestAccUpgradeViewWithTeams(t *testing.T) {
 	upgradeProviderEnabled(t)
+	sweepViewByName(t, "test")
+	cleanupViewByName(t, "test")
 
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewDestroyed,
@@ -126,6 +192,8 @@ func TestAccUpgradeVMConsole(t *testing.T) {
 	upgradeProviderEnabled(t)
 
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000001"
+	cleanupVM(t, vmID)
+	sweepVM(t, vmID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmConsoleConfig(vmID, "https://example.com/console")),
@@ -139,6 +207,8 @@ func TestAccUpgradeVMProxmox(t *testing.T) {
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000002"
 	// Test-specific proxmox id: it is a unique server-side PK, so avoid colliding
 	// with other fixtures / test/main.tf.
+	sweepVM(t, vmID)
+	cleanupVM(t, vmID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", "990010")),
@@ -151,6 +221,8 @@ func TestAccUpgradeVMMultiTeam(t *testing.T) {
 	upgradeProviderEnabled(t)
 
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000003"
+	sweepVM(t, vmID)
+	cleanupVM(t, vmID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmMultiTeamConfig(vmID, "https://example.com/multiteam")),
@@ -163,6 +235,8 @@ func TestAccUpgradeUser(t *testing.T) {
 
 	userID := testEnv("TF_TEST_USER_ID")
 	role := envOrDefault("TF_TEST_USER_ROLE", "Administrator")
+	sweepUser(t, userID)
+	cleanupUser(t, userID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccUserDestroyed(userID),
 		Steps:        upgradeSteps(correctCreds + userConfig(userID, "acc-upgrade-user", role)),
@@ -175,7 +249,8 @@ func TestAccUpgradeVlan(t *testing.T) {
 
 	partitionID := os.Getenv("TF_TEST_PARTITION_ID") // "" => system default partition
 	vlanID := envOrDefault("TF_TEST_VLAN_ID", "1000")
-	// No CheckDestroy: matches TestAccVlan, which omits it.
+	num, _ := strconv.Atoi(vlanID)
+	sweepVlanByNumber(t, num, partitionID)
 	resource.Test(t, resource.TestCase{
 		Steps: upgradeSteps(correctCreds + vlanConfig(partitionID, vlanID)),
 	})
@@ -189,6 +264,8 @@ func TestAccUpgradeViewNetwork(t *testing.T) {
 	providerType := envOrDefault("TF_TEST_NETWORK_PROVIDER_TYPE", "Unknown")
 	instanceID := envOrDefault("TF_TEST_NETWORK_PROVIDER_INSTANCE_ID", "acc-test-instance")
 	networkID := envOrDefault("TF_TEST_NETWORK_ID", "acc-test-network")
+	sweepViewByName(t, "acc-test-net-multi-view")
+	cleanupViewByName(t, "acc-test-net-multi-view")
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewNetworkDestroyed("crucible_player_view_network.multi"),
 		Steps:        upgradeSteps(correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID)),

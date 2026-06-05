@@ -30,6 +30,8 @@ import (
 // Expected behavior:
 // Resource is created, updated, and destroyed without error
 func TestAccAppTemplate(t *testing.T) {
+	var templateID string
+	cleanupAppTemplate(t, &templateID)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.test"),
@@ -37,6 +39,7 @@ func TestAccAppTemplate(t *testing.T) {
 			{
 				Config: correctCreds + configAppTemplate,
 				Check: resource.ComposeTestCheckFunc(
+					captureID("crucible_player_application_template.test", "", &templateID),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "name", "TestTemplate"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "url", "http://example.com"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "icon", "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png"),
@@ -76,12 +79,15 @@ func TestAccAppTemplate(t *testing.T) {
 // (Re-applying the SAME config would not catch it — the field must be omitted
 // AND a sibling must change.)
 func TestAccAppTemplateOmittedFieldsStable(t *testing.T) {
+	var templateID string
+	cleanupAppTemplate(t, &templateID)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.minimal"),
 		Steps: []resource.TestStep{
 			{
 				Config: correctCreds + appTemplateMinimalConfig("acc-min-template"),
+				Check:  captureID("crucible_player_application_template.minimal", "", &templateID),
 			},
 			{
 				// Edit name (a sibling); the omitted url/icon/embeddable/

@@ -27,6 +27,10 @@ func TestAccViewNetwork(t *testing.T) {
 	providerType := envOrDefault("TF_TEST_NETWORK_PROVIDER_TYPE", "Unknown")
 	instanceID := envOrDefault("TF_TEST_NETWORK_PROVIDER_INSTANCE_ID", "acc-test-instance")
 	networkID := envOrDefault("TF_TEST_NETWORK_ID", "acc-test-network")
+	// The view network lives under an inline parent view; sweeping/cleaning that
+	// view by name cascades the network.
+	sweepViewByName(t, "acc-test-net-view")
+	cleanupViewByName(t, "acc-test-net-view")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -65,6 +69,8 @@ func TestAccViewNetworkMultiTeamStable(t *testing.T) {
 	providerType := envOrDefault("TF_TEST_NETWORK_PROVIDER_TYPE", "Unknown")
 	instanceID := envOrDefault("TF_TEST_NETWORK_PROVIDER_INSTANCE_ID", "acc-test-instance")
 	networkID := envOrDefault("TF_TEST_NETWORK_ID", "acc-test-network")
+	sweepViewByName(t, "acc-test-net-multi-view")
+	cleanupViewByName(t, "acc-test-net-multi-view")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

@@ -17,14 +17,24 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
+// Fixed VM ids used by the testConfigs.json-backed VM tests. Shared so each
+// test's CheckDestroy, pre-run sweep, and cleanup all reference the same id.
+const (
+	vmIDNormal = "6a7ec409-d275-4b31-94d3-a51cb61d2519" // configVMNormal / Updated / MultiTeams
+	vmIDFirst  = "1d0b5b53-e034-492d-95c6-714379a4f51e" // configVMFirst
+	vmIDSecond = "3faebb23-d896-410b-9fcb-a17d9d37427d" // configVMSecond
+)
+
 // Test case for a normal creation/deployment of a VM. VM fields are set
 // properly, as are API credentials.
 //
 // Expected behavior: resource is created, verified, and destroyed without error.
 func TestAccVMBasicSuccessful(t *testing.T) {
+	sweepVM(t, vmIDNormal)
+	cleanupVM(t, vmIDNormal)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             testAccVMDestroyed("6a7ec409-d275-4b31-94d3-a51cb61d2519"),
+		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
 				Config: correctCreds + configVMNormal,
@@ -69,9 +79,11 @@ func TestAccVMBasicFail(t *testing.T) {
 
 // Test case for a VM that is created and then updated (name change).
 func TestAccVMUpdate(t *testing.T) {
+	sweepVM(t, vmIDNormal)
+	cleanupVM(t, vmIDNormal)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             testAccVMDestroyed("6a7ec409-d275-4b31-94d3-a51cb61d2519"),
+		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
 				Config: correctCreds + configVMNormal,
@@ -99,11 +111,15 @@ func TestAccVMUpdate(t *testing.T) {
 
 // Test case for the creation of multiple VMs.
 func TestAccVMMultipleCreate(t *testing.T) {
+	sweepVM(t, vmIDFirst)
+	sweepVM(t, vmIDSecond)
+	cleanupVM(t, vmIDFirst)
+	cleanupVM(t, vmIDSecond)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy: resource.ComposeTestCheckFunc(
-			testAccVMDestroyed("1d0b5b53-e034-492d-95c6-714379a4f51e"),
-			testAccVMDestroyed("3faebb23-d896-410b-9fcb-a17d9d37427d"),
+			testAccVMDestroyed(vmIDFirst),
+			testAccVMDestroyed(vmIDSecond),
 		),
 		Steps: []resource.TestStep{
 			{
@@ -127,9 +143,11 @@ func TestAccVMMultipleCreate(t *testing.T) {
 
 // Test case for moving a VM between teams.
 func TestAccVMMoveTeams(t *testing.T) {
+	sweepVM(t, vmIDNormal)
+	cleanupVM(t, vmIDNormal)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             testAccVMDestroyed("6a7ec409-d275-4b31-94d3-a51cb61d2519"),
+		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
 				Config: correctCreds + configVMMultiTeams,
@@ -234,6 +252,8 @@ const vmRegressionTeamID = "c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"
 func TestAccVMConsoleURLStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000001"
 	const baseURL = "https://example.com/console"
+	sweepVM(t, vmID)
+	cleanupVM(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -267,6 +287,8 @@ func TestAccVMProxmoxStable(t *testing.T) {
 	// orphans). Use a high, test-specific id that real configs are unlikely to
 	// use to avoid 500 "duplicate key" collisions.
 	const proxmoxID = "990002"
+	sweepVM(t, vmID)
+	cleanupVM(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -296,6 +318,8 @@ func TestAccVMProxmoxStable(t *testing.T) {
 func TestAccVMBasicStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000003"
 	const baseURL = "https://example.com/basic"
+	sweepVM(t, vmID)
+	cleanupVM(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -326,6 +350,8 @@ func TestAccVMBasicStable(t *testing.T) {
 // covered. This is the shape test/main.tf's console VM uses (url commented out).
 func TestAccVMDefaultURLStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000004"
+	sweepVM(t, vmID)
+	cleanupVM(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -364,6 +390,8 @@ const secondVMRegressionTeamID = "8efdcbd3-daa5-4cb4-b62b-338fe7bf3351"
 func TestAccVMMultiTeamStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000005"
 	const baseURL = "https://example.com/multiteam"
+	sweepVM(t, vmID)
+	cleanupVM(t, vmID)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

@@ -32,6 +32,14 @@ type AcquireVlanCommand struct {
 	VlanId    *int32              `json:"vlanId,omitempty"`
 }
 
+// Partition defines model for Partition.
+type Partition struct {
+	Id        *openapi_types.UUID `json:"id,omitempty"`
+	IsDefault *bool               `json:"isDefault,omitempty"`
+	Name      *string             `json:"name,omitempty"`
+	PoolId    *openapi_types.UUID `json:"poolId,omitempty"`
+}
+
 // ProblemDetails defines model for ProblemDetails.
 type ProblemDetails struct {
 	Detail               *string                `json:"detail,omitempty"`
@@ -271,6 +279,9 @@ type ClientInterface interface {
 
 	AcquireVlan(ctx context.Context, body AcquireVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetPartitions request
+	GetPartitions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetVlansByPartition request
 	GetVlansByPartition(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -307,6 +318,18 @@ func (c *Client) AcquireVlanWithApplicationWildcardPlusJSONBody(ctx context.Cont
 
 func (c *Client) AcquireVlan(ctx context.Context, body AcquireVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAcquireVlanRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPartitions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPartitionsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -400,6 +423,33 @@ func NewAcquireVlanRequestWithBody(server string, contentType string, body io.Re
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPartitionsRequest generates requests for GetPartitions
+func NewGetPartitionsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/vlans/partitions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -556,6 +606,9 @@ type ClientWithResponsesInterface interface {
 
 	AcquireVlanWithResponse(ctx context.Context, body AcquireVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*AcquireVlanResponse, error)
 
+	// GetPartitionsWithResponse request
+	GetPartitionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetPartitionsResponse, error)
+
 	// GetVlansByPartitionWithResponse request
 	GetVlansByPartitionWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetVlansByPartitionResponse, error)
 
@@ -591,6 +644,37 @@ func (r AcquireVlanResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AcquireVlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPartitionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]Partition
+	JSONDefault  *ProblemDetails
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPartitionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPartitionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPartitionsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -715,6 +799,15 @@ func (c *ClientWithResponses) AcquireVlanWithResponse(ctx context.Context, body 
 	return ParseAcquireVlanResponse(rsp)
 }
 
+// GetPartitionsWithResponse request returning *GetPartitionsResponse
+func (c *ClientWithResponses) GetPartitionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetPartitionsResponse, error) {
+	rsp, err := c.GetPartitions(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPartitionsResponse(rsp)
+}
+
 // GetVlansByPartitionWithResponse request returning *GetVlansByPartitionResponse
 func (c *ClientWithResponses) GetVlansByPartitionWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetVlansByPartitionResponse, error) {
 	rsp, err := c.GetVlansByPartition(ctx, id, reqEditors...)
@@ -758,6 +851,42 @@ func ParseAcquireVlanResponse(rsp *http.Response) (*AcquireVlanResponse, error) 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Vlan
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemDetails
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.StatusCode == 200:
+		// Content-type (text/plain) unsupported
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPartitionsResponse parses an HTTP response from a GetPartitionsWithResponse call
+func ParseGetPartitionsResponse(rsp *http.Response) (*GetPartitionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPartitionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Partition
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

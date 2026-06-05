@@ -152,6 +152,33 @@ func DeleteView(id string, m map[string]string) error {
 	return nil
 }
 
+// FindViewByName returns the id of the first view whose name matches, or an
+// empty string if none is found. Used by test cleanup to locate a leaked view
+// (whose computed id wasn't captured) by its known fixed name.
+func FindViewByName(name string, m map[string]string) (string, error) {
+	client, err := playerclient.NewAuthed(m)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.GetViewsWithResponse(context.Background())
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("Player API returned with status code %d when listing views", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", nil
+	}
+	for _, v := range *resp.JSON200 {
+		if v.Name != nil && *v.Name == name && v.Id != nil {
+			return v.Id.String(), nil
+		}
+	}
+	return "", nil
+}
+
 // ViewExists returns true if a view with the given id exists.
 func ViewExists(id string, m map[string]string) (bool, error) {
 	client, err := playerclient.NewAuthed(m)

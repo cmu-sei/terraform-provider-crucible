@@ -12,3 +12,4 @@ out.log
 *.http
 .terraform*
 test/*
+.plugin-cache/

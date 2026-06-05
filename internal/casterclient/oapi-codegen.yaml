@@ -19,3 +19,4 @@ output-options:
     - GetVlan
     - ReleaseVlan
     - GetVlansByPartition
+    - GetPartitions

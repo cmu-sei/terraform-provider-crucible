@@ -59,7 +59,14 @@ tasks:
       see README (### Running tests) for the overridable TF_* variables.
     env:
       TF_ACC: "1"
+      # Cache provider downloads (the upgrade tests pull the old cmu-sei/crucible
+      # v2.5.0 provider from the registry) so it's fetched once and reused across
+      # runs instead of re-downloaded each time. Repo-local + gitignored.
+      TF_PLUGIN_CACHE_DIR: '{{.TF_PLUGIN_CACHE_DIR | default "./.plugin-cache"}}'
     cmds:
+      # Ensure the cache dir exists (terraform errors if TF_PLUGIN_CACHE_DIR is set
+      # but missing).
+      - mkdir -p "{{.TF_PLUGIN_CACHE_DIR | default "./.plugin-cache"}}"
       # gotestsum streams per-test results as they finish (the standard `go test`
       # multi-package runner buffers each package's output until it completes, so
       # the long-running provider package looks like it's hanging). Flags after

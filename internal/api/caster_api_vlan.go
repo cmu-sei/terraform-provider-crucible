@@ -129,6 +129,74 @@ func DeleteVlan(id string, m map[string]string) error {
 	return nil
 }
 
+// FindVlanByNumber returns the resource id of the IN-USE (acquired) vlan with the
+// given number in the given partition, or an empty string if none is acquired. A
+// vlan record persists in the pool after release, so matching only in-use vlans
+// keeps this to "find a leaked/acquired vlan" — its sole purpose (test cleanup of
+// a vlan whose computed resource id wasn't captured). An empty partitionID
+// resolves to Caster's default partition (matching how the vlan resource acquires
+// from the default partition when none is configured).
+func FindVlanByNumber(number int, partitionID string, m map[string]string) (string, error) {
+	client, err := casterclient.NewAuthed(m)
+	if err != nil {
+		return "", err
+	}
+
+	if partitionID == "" {
+		partitionID, err = defaultPartitionID(client)
+		if err != nil {
+			return "", err
+		}
+		if partitionID == "" {
+			return "", nil // no default partition to search
+		}
+	}
+
+	pID, err := uuid.Parse(partitionID)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.GetVlansByPartitionWithResponse(context.Background(), pID)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("Caster API returned with status code %d when listing vlans in partition", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", nil
+	}
+	for _, v := range *resp.JSON200 {
+		inUse := v.InUse != nil && *v.InUse
+		if v.VlanId != nil && int(*v.VlanId) == number && inUse && v.Id != nil {
+			return v.Id.String(), nil
+		}
+	}
+	return "", nil
+}
+
+// defaultPartitionID returns the id of Caster's default partition, or "" if
+// there isn't one.
+func defaultPartitionID(client *casterclient.ClientWithResponses) (string, error) {
+	resp, err := client.GetPartitionsWithResponse(context.Background())
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("Caster API returned with status code %d when listing partitions", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", nil
+	}
+	for _, p := range *resp.JSON200 {
+		if p.IsDefault != nil && *p.IsDefault && p.Id != nil {
+			return p.Id.String(), nil
+		}
+	}
+	return "", nil
+}
+
 // -------------------- structs.Vlan <-> generated model conversion --------------------
 
 // fromVlan maps a generated Vlan onto the provider Vlan struct.

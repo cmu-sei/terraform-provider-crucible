@@ -6,6 +6,7 @@ package provider_test
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
@@ -41,8 +42,20 @@ func TestAccVlan(t *testing.T) {
 
 	var firstID, secondID string
 
+	// Pre-run self-heal: release a leak of either vlan number from a prior crash
+	// (vlan number has no fixed resource id, so find-by-number resolves it).
+	num1, _ := strconv.Atoi(vlanID1)
+	num2, _ := strconv.Atoi(vlanID2)
+	sweepVlanByNumber(t, num1, partitionID)
+	sweepVlanByNumber(t, num2, partitionID)
+	// Post-run cleanup of whatever this run acquired (ids captured below).
+	cleanupVlan(t, &firstID)
+	cleanupVlan(t, &secondID)
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		// secondID holds the final acquired vlan (1000 was replaced by 1001).
+		CheckDestroy: testAccVlanDestroyed(&secondID),
 		Steps: []resource.TestStep{
 			{
 				Config: correctCreds + vlanConfig(partitionID, vlanID1),
@@ -135,6 +148,27 @@ func vlanConfig(partitionID, vlanID string) string {
 	%svlan_id = %s
 }
 `, partitionLine, vlanID)
+}
+
+// testAccVlanDestroyed asserts the vlan with the captured id is no longer in use
+// after destroy. The id is captured during the run into idPtr (it's computed, so
+// not known up front). An empty idPtr means nothing was acquired — nothing to
+// check.
+func testAccVlanDestroyed(idPtr *string) resource.TestCheckFunc {
+	return func(_ *terraform.State) error {
+		if *idPtr == "" {
+			return nil
+		}
+		vlan, err := api.ReadVlan(*idPtr, getMap())
+		if err != nil {
+			// A released vlan may 404 on read; treat that as destroyed.
+			return nil
+		}
+		if vlan.InUse {
+			return fmt.Errorf("vlan %s still in use after destroy", *idPtr)
+		}
+		return nil
+	}
 }
 
 // testAccVlanRemoteInUse verifies the VLAN exists and is in use in Caster, and
