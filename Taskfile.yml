@@ -19,6 +19,19 @@ tasks:
       - curl -sk "{{.VM_SWAGGER_URL}}" -o openapi.json
       - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
 
+  gen-caster-client:
+    desc: >-
+      Regenerate the typed Caster API client (internal/casterclient) from a
+      running Caster API's OpenAPI spec. Requires a live Caster API; override
+      CASTER_SWAGGER_URL to point elsewhere. The fetched spec and generated client
+      are committed so ordinary builds need no stack.
+    vars:
+      CASTER_SWAGGER_URL: '{{.CASTER_SWAGGER_URL | default "http://localhost:4309/swagger/v1/swagger.json"}}'
+    dir: internal/casterclient
+    cmds:
+      - curl -sk "{{.CASTER_SWAGGER_URL}}" -o openapi.json
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
+
   test:
     desc: Run offline unit tests (no live stack). Acceptance steps self-skip without TF_ACC.
     cmds:

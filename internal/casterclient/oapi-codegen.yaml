@@ -1,0 +1,21 @@
+# oapi-codegen config for the Caster API client (VLAN operations).
+#
+# Regenerate with `task gen-caster-client` (fetches the spec from a running
+# Caster API, then runs oapi-codegen against this config). The spec is committed
+# alongside this file as openapi.json so ordinary builds need no live stack.
+#
+# Filtered to the VLAN operations the Terraform provider uses (acquire / get /
+# release) plus the by-partition list (find-a-vlan-by-number, for future test
+# cleanup). The rest of the Caster API (workspaces, pools, partitions, azure
+# settings) is excluded — notably its `oneOf` schemas, which this filter avoids.
+package: casterclient
+output: casterclient.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  include-operation-ids:
+    - AcquireVlan
+    - GetVlan
+    - ReleaseVlan
+    - GetVlansByPartition

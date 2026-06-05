@@ -4,81 +4,73 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
 	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/casterclient"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 )
 
-// -------------------- API Wrappers --------------------
+// This file adapts the provider's VLAN operations onto the oapi-codegen-generated
+// Caster API client (internal/casterclient). Exported function signatures are
+// unchanged from the previous hand-written net/http implementation; only the
+// bodies and model marshaling now go through the typed client. structs.Vlan
+// remains the provider-facing model — conversion happens in fromVlan below.
 
-// CreateVlan wraps the acquire vlan POST call in caster API
+// CreateVlan acquires a VLAN via the Caster API.
 //
 // param command: A struct containing info on acquiring a vlan
 //
 // param m: A map containing configuration info for the provider
 //
-// Returns the ID of the view and error on failure or nil on success
+// Returns the acquired vlan and error on failure or nil on success
 func CreateVlan(command *structs.VlanCreateCommand, m map[string]string) (*structs.Vlan, error) {
-	log.Printf("! At top of API wrapper to create vlan")
-
-	auth, err := util.GetAuth(m)
+	client, err := casterclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	// Remove unset fields from payload
-	payload := map[string]interface{}{
-		"projectId":   util.Ternary(command.ProjectId == "", nil, command.ProjectId),
-		"partitionId": util.Ternary(command.PartitionId == "", nil, command.PartitionId),
-		"tag":         util.Ternary(command.Tag == "", nil, command.Tag),
-		"vlanId":      util.Ternary(!command.VlanId.Valid, nil, command.VlanId.Int32),
+	body := casterclient.AcquireVlanCommand{}
+	if command.ProjectId != "" {
+		id, err := uuid.Parse(command.ProjectId)
+		if err != nil {
+			return nil, err
+		}
+		body.ProjectId = &id
+	}
+	if command.PartitionId != "" {
+		id, err := uuid.Parse(command.PartitionId)
+		if err != nil {
+			return nil, err
+		}
+		body.PartitionId = &id
+	}
+	if command.Tag != "" {
+		tag := command.Tag
+		body.Tag = &tag
+	}
+	if command.VlanId.Valid {
+		v := command.VlanId.Int32
+		body.VlanId = &v
 	}
 
-	log.Printf("! Creating vlan with payload %+v", payload)
-
-	asJSON, err := json.Marshal(payload)
+	resp, err := client.AcquireVlanWithResponse(context.Background(), body)
 	if err != nil {
 		return nil, err
 	}
-
-	request, err := http.NewRequest("POST", util.GetCasterApiUrl(m)+"vlans/actions/acquire/", bytes.NewBuffer(asJSON))
-	if err != nil {
-		return nil, err
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("Caster API returned with status code %d when creating vlan", resp.StatusCode())
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("Caster API returned status 200 with an empty body when acquiring vlan")
 	}
-
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("Caster API returned with status code %d when creating vlan", status)
-	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	vlan := &structs.Vlan{}
-	err = json.Unmarshal([]byte(asStr), vlan)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return vlan, nil
+	return fromVlan(resp.JSON200), nil
 }
 
-// ReadVlan wraps the caster API call to read the fields of a vlan
+// ReadVlan reads the fields of a vlan by id.
 //
 // Param id: the id of the vlan to read
 //
@@ -86,74 +78,77 @@ func CreateVlan(command *structs.VlanCreateCommand, m map[string]string) (*struc
 //
 // Returns error on failure or the vlan on success
 func ReadVlan(id string, m map[string]string) (*structs.Vlan, error) {
-	auth, err := util.GetAuth(m)
+	client, err := casterclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	url := util.GetCasterApiUrl(m) + "vlans/" + id
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-
-	client := &http.Client{}
-	response, err := client.Do(request)
+	vlanID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("Caster API returned with status code %d when reading vlan", status)
-	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	vlan := &structs.Vlan{}
-
-	err = json.Unmarshal([]byte(asStr), vlan)
+	resp, err := client.GetVlanWithResponse(context.Background(), vlanID)
 	if err != nil {
-		log.Printf("! Error unmarshaling in read vlan")
 		return nil, err
 	}
-
-	return vlan, nil
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("Caster API returned with status code %d when reading vlan", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("Caster API returned status 200 with an empty body when reading vlan %s", id)
+	}
+	return fromVlan(resp.JSON200), nil
 }
 
-// DeleteVlan wraps the caster API release vlan call
+// DeleteVlan releases a vlan back into the pool.
 //
-// Param id: The id of the vlan to release back into the pool
+// Param id: The id of the vlan to release
 //
 // param m: A map containing configuration info for the provider
 //
 // Returns error on failure or nil on success
 func DeleteVlan(id string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := casterclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	url := util.GetCasterApiUrl(m) + "vlans/" + id + "/actions/release"
-	request, err := http.NewRequest("POST", url, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	client := &http.Client{}
-
-	response, err := client.Do(request)
+	vlanID, err := uuid.Parse(id)
 	if err != nil {
 		return err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return fmt.Errorf("Caster API returned with status code %d when deleting vlan", status)
+	resp, err := client.ReleaseVlanWithResponse(context.Background(), vlanID)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("Caster API returned with status code %d when deleting vlan", resp.StatusCode())
 	}
 	return nil
+}
+
+// -------------------- structs.Vlan <-> generated model conversion --------------------
+
+// fromVlan maps a generated Vlan onto the provider Vlan struct.
+func fromVlan(v *casterclient.Vlan) *structs.Vlan {
+	out := &structs.Vlan{
+		InUse:    derefBool(v.InUse, false),
+		Reserved: derefBool(v.Reserved, false),
+		Tag:      derefStr(v.Tag),
+	}
+	if v.Id != nil {
+		out.Id = v.Id.String()
+	}
+	if v.PoolId != nil {
+		out.PoolId = v.PoolId.String()
+	}
+	if v.PartitionId != nil {
+		out.PartitionId = v.PartitionId.String()
+	}
+	if v.VlanId != nil {
+		out.VlanId = int(*v.VlanId)
+	}
+	return out
 }
