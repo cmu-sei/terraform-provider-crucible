@@ -32,6 +32,19 @@ tasks:
       - curl -sk "{{.CASTER_SWAGGER_URL}}" -o openapi.json
       - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
 
+  gen-player-client:
+    desc: >-
+      Regenerate the typed Player API client (internal/playerclient) from a
+      running Player API's OpenAPI spec. Requires a live Player API; override
+      PLAYER_SWAGGER_URL to point elsewhere. The fetched spec and generated client
+      are committed so ordinary builds need no stack.
+    vars:
+      PLAYER_SWAGGER_URL: '{{.PLAYER_SWAGGER_URL | default "http://localhost:4300/swagger/v1/swagger.json"}}'
+    dir: internal/playerclient
+    cmds:
+      - curl -sk "{{.PLAYER_SWAGGER_URL}}" -o openapi.json
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
+
   test:
     desc: Run offline unit tests (no live stack). Acceptance steps self-skip without TF_ACC.
     cmds:

@@ -1,0 +1,17 @@
+# oapi-codegen config for the Player API client (views, teams, users,
+# applications, application templates, roles).
+#
+# Regenerate with `task gen-player-client` (fetches the spec from a running
+# Player API, then runs oapi-codegen against this config). The spec is committed
+# alongside this file as openapi.json so ordinary builds need no live stack.
+#
+# The full Player API spec is generated (no operation filter): it has no
+# polymorphism, so it generates cleanly, and keeping the whole surface means new
+# endpoints (and the list/find-by-name operations the hand-written layer lacked)
+# are available without editing this file. Only a subset is currently wired into
+# the internal/api adapters.
+package: playerclient
+output: playerclient.gen.go
+generate:
+  models: true
+  client: true
