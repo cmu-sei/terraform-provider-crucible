@@ -62,11 +62,17 @@ tasks:
       # Cache provider downloads (the upgrade tests pull the old cmu-sei/crucible
       # v2.5.0 provider from the registry) so it's fetched once and reused across
       # runs instead of re-downloaded each time. Repo-local + gitignored.
-      TF_PLUGIN_CACHE_DIR: '{{.TF_PLUGIN_CACHE_DIR | default "./.plugin-cache"}}'
+      #
+      # Must be ABSOLUTE: terraform-plugin-testing runs the terraform CLI in a
+      # per-test temp working directory, and terraform resolves a relative
+      # TF_PLUGIN_CACHE_DIR against that cwd — so a relative path silently breaks
+      # the cache ("plugin cache dir cannot be opened") and re-downloads every
+      # init. {{.ROOT_DIR}} is the Taskfile's directory, injected by Task.
+      TF_PLUGIN_CACHE_DIR: '{{.TF_PLUGIN_CACHE_DIR | default (printf "%s/.plugin-cache" .ROOT_DIR)}}'
     cmds:
       # Ensure the cache dir exists (terraform errors if TF_PLUGIN_CACHE_DIR is set
       # but missing).
-      - mkdir -p "{{.TF_PLUGIN_CACHE_DIR | default "./.plugin-cache"}}"
+      - mkdir -p "{{.TF_PLUGIN_CACHE_DIR | default (printf "%s/.plugin-cache" .ROOT_DIR)}}"
       # gotestsum streams per-test results as they finish (the standard `go test`
       # multi-package runner buffers each package's output until it completes, so
       # the long-running provider package looks like it's hanging). Flags after
