@@ -11,31 +11,18 @@
 package vmclient
 
 import (
-	"context"
-	"net/http"
 	"strings"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 )
 
 // NewAuthed builds a ClientWithResponses for the Player VM API using the
-// provider config map. It derives the server root from vm_api_url and attaches
-// a request editor that injects a fresh OAuth2 bearer token (the same token
-// flow the hand-written client used). The token is fetched once per client.
+// provider config map. It derives the server root from vm_api_url and uses an
+// OAuth2-authenticated HTTP client whose bearer token is cached and refreshed
+// by util.AuthedHTTPClient (shared across all three generated clients).
 func NewAuthed(m map[string]string) (*ClientWithResponses, error) {
 	// util.GetVmApiUrl returns "<root>/api/"; the generated paths add "/api/"
 	// themselves, so strip it to avoid a doubled "/api/api/" path.
 	server := strings.TrimSuffix(util.GetVmApiUrl(m), "/api/")
-
-	auth, err := util.GetAuth(m)
-	if err != nil {
-		return nil, err
-	}
-
-	bearer := func(_ context.Context, req *http.Request) error {
-		req.Header.Set("Authorization", "Bearer "+auth)
-		return nil
-	}
-
-	return NewClientWithResponses(server, WithRequestEditorFn(bearer))
+	return NewClientWithResponses(server, WithHTTPClient(util.AuthedHTTPClient(m)))
 }

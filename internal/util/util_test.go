@@ -2,8 +2,8 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 // Offline unit tests for the pure exported helpers in the util package. These need no
-// network or live Crucible stack. GetAuth is intentionally not tested here because it
-// performs an OAuth2 network call.
+// network or live Crucible stack. AuthedHTTPClient is intentionally not tested here
+// because it performs an OAuth2 network call.
 package util_test
 
 import (

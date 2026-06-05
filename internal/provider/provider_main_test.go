@@ -746,7 +746,7 @@ func getMap() map[string]string {
 	m["username"] = testEnv("TF_USERNAME")
 	m["password"] = testEnv("TF_PASSWORD")
 	m["auth_url"] = testEnv("TF_AUTH_URL")
-	// GetAuth reads the token URL under the "player_token_url" key.
+	// The OAuth2 config reads the token URL under the "player_token_url" key.
 	m["player_token_url"] = testEnv("TF_TOK_URL")
 	m["client_id"] = testEnv("TF_CLIENT_ID")
 	m["client_secret"] = testEnv("TF_CLIENT_SECRET")

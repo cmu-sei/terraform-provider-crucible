@@ -6,7 +6,9 @@ package util
 import (
 	"context"
 	"log"
+	"net/http"
 	"strings"
+	"sync"
 
 	"golang.org/x/oauth2"
 )
@@ -22,15 +24,14 @@ func ToStringSlice(data *[]interface{}) *[]string {
 	return &converted
 }
 
-// GetAuth gets an auth token.
-func GetAuth(m map[string]string) (string, error) {
+// oauthConfig builds the OAuth2 password-grant config from the provider's
+// settings map, so the credential/endpoint wiring lives in one place.
+func oauthConfig(m map[string]string) *oauth2.Config {
 	scopes := strings.Split(m["client_scopes"], ",")
-
 	if len(scopes) == 0 || (len(scopes) == 1 && scopes[0] == "") {
 		scopes = nil
 	}
-
-	con := &oauth2.Config{
+	return &oauth2.Config{
 		ClientID:     m["client_id"],
 		ClientSecret: m["client_secret"],
 		Scopes:       scopes,
@@ -39,12 +40,51 @@ func GetAuth(m map[string]string) (string, error) {
 			TokenURL: m["player_token_url"],
 		},
 	}
+}
 
-	tok, err := con.PasswordCredentialsToken(context.Background(), m["username"], m["password"])
-	if err != nil {
-		return "", err
+// passwordTokenSource is an oauth2.TokenSource that performs the password grant
+// on demand. Wrapped in oauth2.ReuseTokenSource it caches the token and only
+// re-runs the grant when the cached token expires.
+type passwordTokenSource struct {
+	cfg            *oauth2.Config
+	username, pass string
+}
+
+func (s passwordTokenSource) Token() (*oauth2.Token, error) {
+	return s.cfg.PasswordCredentialsToken(context.Background(), s.username, s.pass)
+}
+
+// authClients caches one token-backed *http.Client per credential+endpoint key,
+// so the OAuth2 password grant runs once per process (per distinct config) and
+// tokens auto-refresh thereafter, rather than once per API call.
+var (
+	authClientsMu sync.Mutex
+	authClients   = map[string]*http.Client{}
+)
+
+// AuthedHTTPClient returns an *http.Client that injects (and refreshes) an
+// OAuth2 bearer token built from the provider config map. The underlying token
+// source is cached by credentials+endpoints, so repeated calls — including the
+// per-item calls inside the team/user/permission loops — reuse a single token
+// instead of re-running the password grant every time.
+func AuthedHTTPClient(m map[string]string) *http.Client {
+	key := strings.Join([]string{
+		m["client_id"], m["client_secret"], m["username"],
+		m["auth_url"], m["player_token_url"], m["client_scopes"],
+	}, "|")
+
+	authClientsMu.Lock()
+	defer authClientsMu.Unlock()
+	if c, ok := authClients[key]; ok {
+		return c
 	}
-	return tok.AccessToken, nil
+
+	src := passwordTokenSource{cfg: oauthConfig(m), username: m["username"], pass: m["password"]}
+	// nil seed token => the grant is deferred to the first request and refreshed
+	// automatically on expiry.
+	c := oauth2.NewClient(context.Background(), oauth2.ReuseTokenSource(nil, src))
+	authClients[key] = c
+	return c
 }
 
 // PairInList returns true if a given key/value pair exists somewhere in a list of maps
