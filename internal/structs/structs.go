@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -89,6 +90,13 @@ func ProxmoxInfoFromMap(m map[string]interface{}) *ProxmoxInfo {
 	default:
 		// float64 is default JSON unmarshalled number type
 		intId = int(util.As[float64](id))
+	}
+
+	// The API represents the Proxmox id as a 32-bit integer, so a value outside
+	// that range cannot be a valid VMID. Reject it rather than let it silently
+	// truncate/wrap when converted to int32 downstream.
+	if intId > math.MaxInt32 || intId < math.MinInt32 {
+		return nil
 	}
 
 	return &ProxmoxInfo{

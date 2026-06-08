@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -353,14 +354,22 @@ func toProxmoxInfo(p *structs.ProxmoxInfo) *vmclient.ProxmoxVmInfo {
 	if p == nil {
 		return nil
 	}
-	id := int32(p.Id)
 	node := p.Node
 	t := vmclient.ProxmoxVmType(p.Type)
-	return &vmclient.ProxmoxVmInfo{
-		Id:   &id,
+	info := &vmclient.ProxmoxVmInfo{
 		Node: &node,
 		Type: &t,
 	}
+	// The client represents the Proxmox id as an int32. Only set it when p.Id is
+	// in range; an out-of-range value would silently truncate/wrap, so leave the
+	// field unset (omitempty) instead of transmitting a corrupt id. Parsing in
+	// structs.ProxmoxInfoFromMap already rejects out-of-range ids, so this is a
+	// defensive guard at the conversion sink.
+	if p.Id >= math.MinInt32 && p.Id <= math.MaxInt32 {
+		id := int32(p.Id)
+		info.Id = &id
+	}
+	return info
 }
 
 func fromProxmoxInfo(p *vmclient.ProxmoxVmInfo) *structs.ProxmoxInfo {
