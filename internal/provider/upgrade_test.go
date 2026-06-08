@@ -104,25 +104,17 @@ func externalOldProvider() map[string]resource.ExternalProvider {
 // SDKv1 provider plans cleanly (empty plan) under the new Framework provider.
 func TestAccUpgradeView(t *testing.T) {
 	upgradeProviderEnabled(t)
+	sweepViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 
 	resource.Test(t, resource.TestCase{
-		Steps: []resource.TestStep{
-			{
-				// Create with the old published provider.
-				ExternalProviders: externalOldProvider(),
-				Config:            correctCreds + configViewEmpty,
-			},
-			{
-				// Switch to the new dev provider; expect no planned changes.
-				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-				Config:                   correctCreds + configViewEmpty,
-				ConfigPlanChecks: resource.ConfigPlanChecks{
-					PreApply: []plancheck.PlanCheck{
-						plancheck.ExpectEmptyPlan(),
-					},
-				},
-			},
-		},
+		CheckDestroy: testAccViewDestroyed,
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+configViewEmpty,
+			correctCreds+configViewEmptyUpdated,
+			testAccVerifyRemoteView(emptyViewExpected),
+			testAccVerifyRemoteView(emptyViewExpectedUpdated),
+		),
 	})
 }
 
@@ -132,21 +124,16 @@ func TestAccUpgradeAppTemplate(t *testing.T) {
 	upgradeProviderEnabled(t)
 
 	resource.Test(t, resource.TestCase{
-		Steps: []resource.TestStep{
-			{
-				ExternalProviders: externalOldProvider(),
-				Config:            correctCreds + configAppTemplate,
-			},
-			{
-				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-				Config:                   correctCreds + configAppTemplate,
-				ConfigPlanChecks: resource.ConfigPlanChecks{
-					PreApply: []plancheck.PlanCheck{
-						plancheck.ExpectEmptyPlan(),
-					},
-				},
-			},
-		},
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+configAppTemplate,
+			correctCreds+configAppTemplateUpdated,
+			verifyRemoteTemplate("TestTemplate", "http://example.com",
+				"https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
+				"false", "false"),
+			verifyRemoteTemplate("TestTemplateUpdated", "http://example.com",
+				"https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
+				"false", "false"),
+		),
 	})
 }
 
@@ -172,6 +159,44 @@ func upgradeSteps(config string) []resource.TestStep {
 	}
 }
 
+// upgradeStepsWithUpdate extends upgradeSteps with two things the empty-plan-only
+// flow can't prove: that the migrated resource's content is actually correct after
+// the switch, and that the new (Framework) provider can MUTATE a resource that was
+// created by the old SDKv1 provider. The latter is what a user does immediately
+// after upgrading, so it is the real upgrade-safety guarantee.
+//
+//   - Step 1 creates with the old published provider.
+//   - Step 2 switches to the in-process Framework build, asserts an empty plan, and
+//     runs postSwitchCheck (content assertions on the migrated state).
+//   - Step 3 applies updatedConfig under the Framework provider and runs
+//     postUpdateCheck, exercising Update against old-provider-born state.
+//
+// createConfig must parse byte-identically under both provider versions; updatedConfig
+// only needs to parse under the new provider.
+func upgradeStepsWithUpdate(createConfig, updatedConfig string, postSwitchCheck, postUpdateCheck resource.TestCheckFunc) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			ExternalProviders: externalOldProvider(),
+			Config:            createConfig,
+		},
+		{
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Config:                   createConfig,
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectEmptyPlan(),
+				},
+			},
+			Check: postSwitchCheck,
+		},
+		{
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Config:                   updatedConfig,
+			Check:                    postUpdateCheck,
+		},
+	}
+}
+
 // TestAccUpgradeViewWithTeams enriches the view upgrade coverage beyond the bare
 // configViewEmpty: it exercises team role/permissions and the nested
 // app_instance/user blocks across the SDKv1->Framework migration.
@@ -182,7 +207,12 @@ func TestAccUpgradeViewWithTeams(t *testing.T) {
 
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewDestroyed,
-		Steps:        upgradeSteps(correctCreds + configViewTeams),
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+configViewTeams,
+			correctCreds+configViewTeamsUpdated,
+			testAccVerifyRemoteView(teamViewExpected),
+			testAccVerifyRemoteView(teamViewExpectedUpdated),
+		),
 	})
 }
 
@@ -192,6 +222,8 @@ func TestAccUpgradeVMConsole(t *testing.T) {
 	upgradeProviderEnabled(t)
 
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000001"
+	const baseURL = "https://example.com/console"
+	const updatedURL = "https://example.com/console-updated"
 	registerVMCleanup(t, vmID)
 	sweepVM(t, vmID)
 	// vmConsoleConfig emits an inline view fixture (for a real team id); clean it up.
@@ -199,7 +231,16 @@ func TestAccUpgradeVMConsole(t *testing.T) {
 	registerViewCleanupByName(t, vmConsoleViewName)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
-		Steps:        upgradeSteps(correctCreds + vmConsoleConfig(vmID, "https://example.com/console")),
+		// The console VM's url is asserted against state (not the remote API): the
+		// VM API appends a Guacamole "/#/client/<token>" fragment to the url, which
+		// the provider strips on read, so state holds the base url but the remote
+		// value differs. testAccVMRemoteMatchesState would mismatch here.
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+vmConsoleConfig(vmID, baseURL),
+			correctCreds+vmConsoleConfig(vmID, updatedURL),
+			resource.TestCheckResourceAttr("crucible_player_virtual_machine.regconsole", "url", baseURL),
+			resource.TestCheckResourceAttr("crucible_player_virtual_machine.regconsole", "url", updatedURL),
+		),
 	})
 }
 
@@ -210,13 +251,21 @@ func TestAccUpgradeVMProxmox(t *testing.T) {
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000002"
 	// Test-specific proxmox id: it is a unique server-side PK, so avoid colliding
 	// with other fixtures / test/main.tf.
+	const proxmoxID = "990010"
+	const baseURL = "https://example.com/proxmox"
+	const updatedURL = "https://example.com/proxmox-updated"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
 	sweepViewByName(t, vmProxmoxViewName)
 	registerViewCleanupByName(t, vmProxmoxViewName)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
-		Steps:        upgradeSteps(correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", "990010")),
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+vmProxmoxConfig(vmID, baseURL, proxmoxID),
+			correctCreds+vmProxmoxConfig(vmID, updatedURL, proxmoxID),
+			testAccVMRemoteMatchesState("crucible_player_virtual_machine.regproxmox", baseURL, "tf-acc-proxmox", vmUserID()),
+			testAccVMRemoteMatchesState("crucible_player_virtual_machine.regproxmox", updatedURL, "tf-acc-proxmox", vmUserID()),
+		),
 	})
 }
 
@@ -226,13 +275,26 @@ func TestAccUpgradeVMMultiTeam(t *testing.T) {
 	upgradeProviderEnabled(t)
 
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000003"
+	const baseURL = "https://example.com/multiteam"
+	const updatedURL = "https://example.com/multiteam-updated"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
 	sweepViewByName(t, vmMultiTeamViewName)
 	registerViewCleanupByName(t, vmMultiTeamViewName)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
-		Steps:        upgradeSteps(correctCreds + vmMultiTeamConfig(vmID, "https://example.com/multiteam")),
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+vmMultiTeamConfig(vmID, baseURL),
+			correctCreds+vmMultiTeamConfig(vmID, updatedURL),
+			resource.ComposeTestCheckFunc(
+				resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.#", "2"),
+				testAccVMRemoteMatchesState("crucible_player_virtual_machine.regmulti", baseURL, "tf-acc-multiteam", vmUserID()),
+			),
+			resource.ComposeTestCheckFunc(
+				resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.#", "2"),
+				testAccVMRemoteMatchesState("crucible_player_virtual_machine.regmulti", updatedURL, "tf-acc-multiteam", vmUserID()),
+			),
+		),
 	})
 }
 
@@ -242,11 +304,17 @@ func TestAccUpgradeUser(t *testing.T) {
 
 	userID := testEnv("TF_TEST_USER_ID")
 	role := envOrDefault("TF_TEST_USER_ROLE", "Administrator")
+	roleUpdated := envOrDefault("TF_TEST_USER_ROLE_UPDATED", "Content Developer")
 	sweepUser(t, userID)
 	registerUserCleanup(t, userID)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccUserDestroyed(userID),
-		Steps:        upgradeSteps(correctCreds + userConfig(userID, "acc-upgrade-user", role)),
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+userConfig(userID, "acc-upgrade-user", role),
+			correctCreds+userConfig(userID, "acc-upgrade-user", roleUpdated),
+			testAccUserRemoteRole(userID, role),
+			testAccUserRemoteRole(userID, roleUpdated),
+		),
 	})
 }
 
@@ -258,6 +326,10 @@ func TestAccUpgradeVlan(t *testing.T) {
 	vlanID := envOrDefault("TF_TEST_VLAN_ID", "1000")
 	num, _ := strconv.Atoi(vlanID)
 	sweepVlanByNumber(t, num, partitionID)
+	// Stays on the empty-plan-only upgradeSteps: every crucible_vlan attribute is
+	// RequiresReplace, so there is no in-place Update to exercise across the
+	// boundary — a config change is a destroy+recreate. The no-drift guarantee is
+	// the meaningful one for this resource.
 	resource.Test(t, resource.TestCase{
 		Steps: upgradeSteps(correctCreds + vlanConfig(partitionID, vlanID)),
 	})
@@ -275,6 +347,13 @@ func TestAccUpgradeViewNetwork(t *testing.T) {
 	registerViewCleanupByName(t, "acc-test-net-multi-view")
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewNetworkDestroyed("crucible_player_view_network.multi"),
-		Steps:        upgradeSteps(correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID)),
+		Steps: upgradeStepsWithUpdate(
+			correctCreds+viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi"),
+			correctCreds+viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi-updated"),
+			testAccViewNetworkRemoteMatches("crucible_player_view_network.multi",
+				providerType, instanceID, networkID, "acc-test-net-multi"),
+			testAccViewNetworkRemoteMatches("crucible_player_view_network.multi",
+				providerType, instanceID, networkID, "acc-test-net-multi-updated"),
+		),
 	})
 }

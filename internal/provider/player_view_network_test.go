@@ -42,14 +42,16 @@ func TestAccViewNetwork(t *testing.T) {
 					resource.TestCheckResourceAttr("crucible_player_view_network.test", "provider_type", providerType),
 					resource.TestCheckResourceAttr("crucible_player_view_network.test", "name", "acc-test-net"),
 					resource.TestCheckResourceAttrSet("crucible_player_view_network.test", "view_id"),
-					testAccViewNetworkExists("crucible_player_view_network.test"),
+					testAccViewNetworkRemoteMatches("crucible_player_view_network.test",
+						providerType, instanceID, networkID, "acc-test-net"),
 				),
 			},
 			{
 				Config: correctCreds + viewNetworkConfig(providerType, instanceID, networkID, "acc-test-net-updated"),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view_network.test", "name", "acc-test-net-updated"),
-					testAccViewNetworkExists("crucible_player_view_network.test"),
+					testAccViewNetworkRemoteMatches("crucible_player_view_network.test",
+						providerType, instanceID, networkID, "acc-test-net-updated"),
 				),
 			},
 			// NOTE: no ImportState step — ImportState passes through only `id`,
@@ -77,14 +79,14 @@ func TestAccViewNetworkMultiTeamStable(t *testing.T) {
 		CheckDestroy:             testAccViewNetworkDestroyed("crucible_player_view_network.multi"),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID),
+				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi"),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view_network.multi", "team_ids.#", "2"),
 					testAccViewNetworkExists("crucible_player_view_network.multi"),
 				),
 			},
 			{
-				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID),
+				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi"),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),
@@ -116,7 +118,7 @@ func viewNetworkConfig(providerType, instanceID, networkID, name string) string 
 	`, providerType, instanceID, networkID, name)
 }
 
-func viewNetworkMultiTeamConfig(providerType, instanceID, networkID string) string {
+func viewNetworkMultiTeamConfig(providerType, instanceID, networkID, name string) string {
 	// Two teams; assign the network to both in reverse-sorted order so the
 	// configured order is guaranteed to differ from ascending sort order. The
 	// old read() sorted team_ids ascending, which would then mismatch this
@@ -140,13 +142,43 @@ func viewNetworkMultiTeamConfig(providerType, instanceID, networkID string) stri
 		provider_type        = "%s"
 		provider_instance_id = "%s"
 		network_id           = "%s"
-		name                 = "acc-test-net-multi"
+		name                 = "%s"
 		team_ids = reverse(sort([
 			crucible_player_view.net_multi_parent.team[0].team_id,
 			crucible_player_view.net_multi_parent.team[1].team_id,
 		]))
 	}
-	`, providerType, instanceID, networkID)
+	`, providerType, instanceID, networkID, name)
+}
+
+// testAccViewNetworkRemoteMatches reads the view network from the API and asserts
+// its content (not just existence): provider_type, provider_instance_id, network_id,
+// and name must match what was configured. This catches an upgrade or update that
+// plans cleanly but silently drops or garbles an attribute.
+func testAccViewNetworkRemoteMatches(res, wantType, wantInstanceID, wantNetworkID, wantName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		viewID, id, err := viewNetworkIDs(s, res)
+		if err != nil {
+			return err
+		}
+		net, err := api.GetViewNetwork(viewID, id, getMap())
+		if err != nil {
+			return err
+		}
+		if net.ProviderType != wantType {
+			return fmt.Errorf("expected provider_type %q, got %q", wantType, net.ProviderType)
+		}
+		if net.ProviderInstanceId != wantInstanceID {
+			return fmt.Errorf("expected provider_instance_id %q, got %q", wantInstanceID, net.ProviderInstanceId)
+		}
+		if net.NetworkId != wantNetworkID {
+			return fmt.Errorf("expected network_id %q, got %q", wantNetworkID, net.NetworkId)
+		}
+		if net.Name != wantName {
+			return fmt.Errorf("expected name %q, got %q", wantName, net.Name)
+		}
+		return nil
+	}
 }
 
 // testAccViewNetworkExists verifies the view network exists in the API.
