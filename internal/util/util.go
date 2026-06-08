@@ -54,9 +54,11 @@ func (s passwordTokenSource) Token() (*oauth2.Token, error) {
 	return s.cfg.PasswordCredentialsToken(context.Background(), s.username, s.pass)
 }
 
-// authClients caches one token-backed *http.Client per credential+endpoint key,
-// so the OAuth2 password grant runs once per process (per distinct config) and
-// tokens auto-refresh thereafter, rather than once per API call.
+// authClients caches one token-backed *http.Client per full-credential+endpoint
+// key (including the password), so the OAuth2 password grant runs once per process
+// (per distinct config) and tokens auto-refresh thereafter, rather than once per API
+// call. The password must be part of the key: two configs that differ only by
+// password are distinct credentials and must not share a cached token.
 var (
 	authClientsMu sync.Mutex
 	authClients   = map[string]*http.Client{}
@@ -69,7 +71,7 @@ var (
 // instead of re-running the password grant every time.
 func AuthedHTTPClient(m map[string]string) *http.Client {
 	key := strings.Join([]string{
-		m["client_id"], m["client_secret"], m["username"],
+		m["client_id"], m["client_secret"], m["username"], m["password"],
 		m["auth_url"], m["player_token_url"], m["client_scopes"],
 	}, "|")
 
