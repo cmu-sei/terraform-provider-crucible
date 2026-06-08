@@ -26,7 +26,7 @@ import (
 //
 // param m: A map containing configuration info for the provider
 //
-// Returns the acquired vlan and error on failure or nil on success
+// Returns the acquired vlan and error on failure or nil on success.
 func CreateVlan(command *structs.VlanCreateCommand, m map[string]string) (*structs.Vlan, error) {
 	client, err := casterclient.NewAuthed(m)
 	if err != nil {
@@ -62,10 +62,10 @@ func CreateVlan(command *structs.VlanCreateCommand, m map[string]string) (*struc
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Caster API returned with status code %d when creating vlan", resp.StatusCode())
+		return nil, fmt.Errorf("caster API returned with status code %d when creating vlan", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("Caster API returned status 200 with an empty body when acquiring vlan")
+		return nil, fmt.Errorf("caster API returned status 200 with an empty body when acquiring vlan")
 	}
 	return fromVlan(resp.JSON200), nil
 }
@@ -76,7 +76,7 @@ func CreateVlan(command *structs.VlanCreateCommand, m map[string]string) (*struc
 //
 // param m: A map containing configuration info for the provider
 //
-// Returns error on failure or the vlan on success
+// Returns error on failure or the vlan on success.
 func ReadVlan(id string, m map[string]string) (*structs.Vlan, error) {
 	client, err := casterclient.NewAuthed(m)
 	if err != nil {
@@ -93,10 +93,10 @@ func ReadVlan(id string, m map[string]string) (*structs.Vlan, error) {
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Caster API returned with status code %d when reading vlan", resp.StatusCode())
+		return nil, fmt.Errorf("caster API returned with status code %d when reading vlan", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("Caster API returned status 200 with an empty body when reading vlan %s", id)
+		return nil, fmt.Errorf("caster API returned status 200 with an empty body when reading vlan %s", id)
 	}
 	return fromVlan(resp.JSON200), nil
 }
@@ -130,7 +130,7 @@ func VlanExists(id string, m map[string]string) (bool, error) {
 //
 // param m: A map containing configuration info for the provider
 //
-// Returns error on failure or nil on success
+// Returns error on failure or nil on success.
 func DeleteVlan(id string, m map[string]string) error {
 	client, err := casterclient.NewAuthed(m)
 	if err != nil {
@@ -147,7 +147,7 @@ func DeleteVlan(id string, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("Caster API returned with status code %d when deleting vlan", resp.StatusCode())
+		return fmt.Errorf("caster API returned with status code %d when deleting vlan", resp.StatusCode())
 	}
 	return nil
 }
@@ -185,7 +185,7 @@ func FindVlanByNumber(number int, partitionID string, m map[string]string) (stri
 		return "", err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return "", fmt.Errorf("Caster API returned with status code %d when listing vlans in partition", resp.StatusCode())
+		return "", fmt.Errorf("caster API returned with status code %d when listing vlans in partition", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
 		return "", nil
@@ -207,7 +207,7 @@ func defaultPartitionID(client *casterclient.ClientWithResponses) (string, error
 		return "", err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return "", fmt.Errorf("Caster API returned with status code %d when listing partitions", resp.StatusCode())
+		return "", fmt.Errorf("caster API returned with status code %d when listing partitions", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
 		return "", nil

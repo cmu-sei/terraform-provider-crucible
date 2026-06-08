@@ -212,12 +212,10 @@ func testAccViewNetworkDestroyed(res string) resource.TestCheckFunc {
 		viewID := rs.Primary.Attributes["view_id"]
 		id := rs.Primary.ID
 
-		exists, err := api.ViewNetworkExists(viewID, id, getMap())
-		if err != nil {
-			// The parent view may already be deleted, which surfaces as an
-			// error here; treat that as successfully destroyed.
-			return nil
-		}
+		// The parent view may already be deleted, which surfaces as an error
+		// here; ViewNetworkExists returns false on error, so that reads as
+		// successfully destroyed.
+		exists, _ := api.ViewNetworkExists(viewID, id, getMap())
 		if exists {
 			return fmt.Errorf("view network %s still exists after destroy", id)
 		}

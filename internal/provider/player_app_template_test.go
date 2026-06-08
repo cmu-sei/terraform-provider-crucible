@@ -28,7 +28,7 @@ import (
 // 5. Terraform destroys resource
 //
 // Expected behavior:
-// Resource is created, updated, and destroyed without error
+// Resource is created, updated, and destroyed without error.
 func TestAccAppTemplate(t *testing.T) {
 	var templateID string
 	registerAppTemplateCleanup(t, &templateID)
@@ -45,8 +45,7 @@ func TestAccAppTemplate(t *testing.T) {
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "icon", "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "embeddable", "false"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "load_in_background", "false"),
-					verifyRemoteTemplate("TestTemplate", "http://example.com", "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
-						"false", "false"),
+					verifyRemoteTemplate("TestTemplate"),
 				),
 			},
 			{
@@ -57,8 +56,7 @@ func TestAccAppTemplate(t *testing.T) {
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "icon", "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "embeddable", "false"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "load_in_background", "false"),
-					verifyRemoteTemplate("TestTemplateUpdated", "http://example.com", "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
-						"false", "false"),
+					verifyRemoteTemplate("TestTemplateUpdated"),
 				),
 			},
 			{
@@ -168,10 +166,9 @@ func testAccTemplateDestroyed(res string) resource.TestCheckFunc {
 		if !ok {
 			return nil
 		}
-		tmpl, err := api.AppTemplateRead(rs.Primary.ID, getMap())
-		if err != nil {
-			return nil
-		}
+		// AppTemplateRead returns a nil/zero-valued template on error (deleted
+		// template => empty body fails to decode), which reads as destroyed.
+		tmpl, _ := api.AppTemplateRead(rs.Primary.ID, getMap())
 		if tmpl != nil && tmpl.Name != "" {
 			return fmt.Errorf("template %s still exists after destroy", rs.Primary.ID)
 		}
@@ -179,7 +176,14 @@ func testAccTemplateDestroyed(res string) resource.TestCheckFunc {
 	}
 }
 
-func verifyRemoteTemplate(name, url, icon, embeddable, load string) resource.TestCheckFunc {
+func verifyRemoteTemplate(name string) resource.TestCheckFunc {
+	// Every caller uses the same template url, icon, embeddable, and
+	// load_in_background values, so they are fixed here rather than threaded
+	// through as always-identical parameters; only the template name varies.
+	const url = "http://example.com"
+	const icon = "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png"
+	const embeddable = "false"
+	const load = "false"
 	return func(s *terraform.State) error {
 		mod := s.Modules[0]
 		str := fmt.Sprintf("%+v", mod)

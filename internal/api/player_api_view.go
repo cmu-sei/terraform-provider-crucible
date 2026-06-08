@@ -46,10 +46,10 @@ func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
 		return "", err
 	}
 	if resp.StatusCode() != http.StatusCreated {
-		return "", fmt.Errorf("Player API returned with status code %d when creating view", resp.StatusCode())
+		return "", fmt.Errorf("player API returned with status code %d when creating view", resp.StatusCode())
 	}
 	if resp.JSON201 == nil || resp.JSON201.Id == nil {
-		return "", fmt.Errorf("Player API returned status 201 with no view id when creating view")
+		return "", fmt.Errorf("player API returned status 201 with no view id when creating view")
 	}
 	return resp.JSON201.Id.String(), nil
 }
@@ -71,10 +71,10 @@ func ReadView(id string, m map[string]string) (*structs.ViewInfo, error) {
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Player API returned with status code %d when reading view", resp.StatusCode())
+		return nil, fmt.Errorf("player API returned with status code %d when reading view", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("Player API returned status 200 with an empty body when reading view %s", id)
+		return nil, fmt.Errorf("player API returned status 200 with an empty body when reading view %s", id)
 	}
 
 	view := &structs.ViewInfo{
@@ -125,7 +125,7 @@ func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("Player API returned with status code %d when updating view", resp.StatusCode())
+		return fmt.Errorf("player API returned with status code %d when updating view", resp.StatusCode())
 	}
 	return nil
 }
@@ -147,7 +147,7 @@ func DeleteView(id string, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusNoContent {
-		return fmt.Errorf("Player API returned with status code %d when deleting view", resp.StatusCode())
+		return fmt.Errorf("player API returned with status code %d when deleting view", resp.StatusCode())
 	}
 	return nil
 }
@@ -166,7 +166,7 @@ func FindViewByName(name string, m map[string]string) (string, error) {
 		return "", err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return "", fmt.Errorf("Player API returned with status code %d when listing views", resp.StatusCode())
+		return "", fmt.Errorf("player API returned with status code %d when listing views", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
 		return "", nil

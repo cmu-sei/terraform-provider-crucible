@@ -129,7 +129,7 @@ func CreateUser(user structs.PlayerUser, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusCreated {
-		return fmt.Errorf("Error creating user in Player. API returned status code %d", resp.StatusCode())
+		return fmt.Errorf("error creating user in Player. API returned status code %d", resp.StatusCode())
 	}
 	return nil
 }
@@ -151,10 +151,10 @@ func ReadUser(id string, m map[string]string) (*structs.PlayerUser, error) {
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Error reading user in Player. API returned status code %d", resp.StatusCode())
+		return nil, fmt.Errorf("error reading user in Player. API returned status code %d", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("Player API returned status 200 with an empty body when reading user %s", id)
+		return nil, fmt.Errorf("player API returned status 200 with an empty body when reading user %s", id)
 	}
 
 	user := &structs.PlayerUser{Name: derefStr(resp.JSON200.Name)}
@@ -218,7 +218,7 @@ func UpdateUser(user structs.PlayerUser, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("Error updating user in Player. API returned status code %d", resp.StatusCode())
+		return fmt.Errorf("error updating user in Player. API returned status code %d", resp.StatusCode())
 	}
 	return nil
 }
@@ -240,7 +240,7 @@ func DeleteUser(id string, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusNoContent {
-		return fmt.Errorf("Error deleting user in Player. API returned status code %d", resp.StatusCode())
+		return fmt.Errorf("error deleting user in Player. API returned status code %d", resp.StatusCode())
 	}
 	return nil
 }

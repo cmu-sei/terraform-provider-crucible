@@ -28,7 +28,7 @@ import (
 //
 // param requestBody: The struct representing the VM to be created
 //
-// param m: map containing provider config info
+// param m: map containing provider config info.
 func CreateVM(requestBody *structs.VMInfo, m map[string]string) error {
 	client, err := vmclient.NewAuthed(m)
 	if err != nil {
@@ -45,7 +45,7 @@ func CreateVM(requestBody *structs.VMInfo, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusCreated {
-		return fmt.Errorf("Request returned with status code %d", resp.StatusCode())
+		return fmt.Errorf("request returned with status code %d", resp.StatusCode())
 	}
 	return nil
 }
@@ -54,7 +54,7 @@ func CreateVM(requestBody *structs.VMInfo, m map[string]string) error {
 //
 // param id: the id of the VM to look up
 //
-// Returns a struct containing the VM's info, and a possible error
+// Returns a struct containing the VM's info, and a possible error.
 func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {
 	client, err := vmclient.NewAuthed(m)
 	if err != nil {
@@ -71,7 +71,7 @@ func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Request returned with status code %d", resp.StatusCode())
+		return nil, fmt.Errorf("request returned with status code %d", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("VM API returned status 200 with an empty body")
@@ -85,7 +85,7 @@ func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {
 //
 // id: the ID of the VM to be updated
 //
-// Returns some error on failure and nil on success
+// Returns some error on failure and nil on success.
 func UpdateVM(requestBody *structs.VMInfo, id string, m map[string]string) error {
 	client, err := vmclient.NewAuthed(m)
 	if err != nil {
@@ -102,7 +102,7 @@ func UpdateVM(requestBody *structs.VMInfo, id string, m map[string]string) error
 		return err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("Request returned with status code %d", resp.StatusCode())
+		return fmt.Errorf("request returned with status code %d", resp.StatusCode())
 	}
 	return nil
 }
@@ -111,7 +111,7 @@ func UpdateVM(requestBody *structs.VMInfo, id string, m map[string]string) error
 //
 // id: the id of the VM to delete
 //
-// returns error on failure or nil on success
+// returns error on failure or nil on success.
 func DeleteVM(id string, m map[string]string) error {
 	client, err := vmclient.NewAuthed(m)
 	if err != nil {
@@ -128,7 +128,7 @@ func DeleteVM(id string, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusNoContent {
-		return fmt.Errorf("Request returned with status code %d", resp.StatusCode())
+		return fmt.Errorf("request returned with status code %d", resp.StatusCode())
 	}
 	return nil
 }
@@ -160,7 +160,7 @@ func VMExists(id string, m map[string]string) (bool, error) {
 //
 // param m: A map containing config info for the provider
 //
-// Returns nil on success or some error on failure
+// Returns nil on success or some error on failure.
 func RemoveVMFromTeams(teams *[]string, vm string, m map[string]string) error {
 	client, err := vmclient.NewAuthed(m)
 	if err != nil {
@@ -198,7 +198,7 @@ func RemoveVMFromTeams(teams *[]string, vm string, m map[string]string) error {
 //
 // param m: A map containing config info for the provider
 //
-// Returns nil on success or some error on failure
+// Returns nil on success or some error on failure.
 func AddVMToTeams(teams *[]string, vm string, m map[string]string) error {
 	client, err := vmclient.NewAuthed(m)
 	if err != nil {

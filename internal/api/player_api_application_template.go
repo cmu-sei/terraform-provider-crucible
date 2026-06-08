@@ -42,10 +42,10 @@ func CreateAppTemplate(template *structs.AppTemplate, m map[string]string) (stri
 		return "", err
 	}
 	if resp.StatusCode() != http.StatusCreated {
-		return "", fmt.Errorf("Player API returned with status code %d when creating template", resp.StatusCode())
+		return "", fmt.Errorf("player API returned with status code %d when creating template", resp.StatusCode())
 	}
 	if resp.JSON201 == nil || resp.JSON201.Id == nil {
-		return "", fmt.Errorf("Player API returned status 201 with no id when creating template")
+		return "", fmt.Errorf("player API returned status 201 with no id when creating template")
 	}
 	return resp.JSON201.Id.String(), nil
 }
@@ -69,7 +69,7 @@ func AppTemplateRead(id string, m map[string]string) (*structs.AppTemplate, erro
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Player API returned with status code %d when reading template", resp.StatusCode())
+		return nil, fmt.Errorf("player API returned with status code %d when reading template", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
 		// Empty body for a missing template — represent as a zero-valued struct.
@@ -103,7 +103,7 @@ func AppTemplateUpdate(id string, template *structs.AppTemplate, m map[string]st
 		return err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("Player API returned with status code %d when updating template", resp.StatusCode())
+		return fmt.Errorf("player API returned with status code %d when updating template", resp.StatusCode())
 	}
 	return nil
 }
@@ -125,7 +125,7 @@ func DeleteAppTemplate(id string, m map[string]string) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusNoContent {
-		return fmt.Errorf("Player API returned with status code %d when deleting template", resp.StatusCode())
+		return fmt.Errorf("player API returned with status code %d when deleting template", resp.StatusCode())
 	}
 	return nil
 }
@@ -155,7 +155,7 @@ func AppTemplateExists(id string, m map[string]string) (bool, error) {
 		return false, nil // future-proof: API may switch to 404
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return false, fmt.Errorf("Player API returned status code %d when checking template existence", resp.StatusCode())
+		return false, fmt.Errorf("player API returned status code %d when checking template existence", resp.StatusCode())
 	}
 	// The current API returns 200 with an empty body for a missing template.
 	return resp.JSON200 != nil, nil

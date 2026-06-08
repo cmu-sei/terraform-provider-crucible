@@ -808,7 +808,7 @@ func ifaceStr(v interface{}) string {
 func createApps(viewID string, m map[string]string, apps []interface{}) error {
 	appStructs := new([]*structs.AppInfo)
 	for _, app := range apps {
-		asMap := app.(map[string]interface{})
+		asMap := util.As[map[string]interface{}](app)
 
 		// Generate a uuid if one is not provided.
 		if asMap["app_id"] == "" {
@@ -828,7 +828,7 @@ func createApps(viewID string, m map[string]string, apps []interface{}) error {
 	// Propagate those back into the shared apps slice (built 1:1 and in order)
 	// so the app_instance parent lookup in createTeams uses real IDs.
 	for i, app := range apps {
-		app.(map[string]interface{})["app_id"] = (*appStructs)[i].ID
+		util.As[map[string]interface{}](app)["app_id"] = (*appStructs)[i].ID
 	}
 
 	return nil
@@ -838,14 +838,14 @@ func createApps(viewID string, m map[string]string, apps []interface{}) error {
 func createTeams(viewID string, m map[string]string, teams []interface{}, applications []interface{}) error {
 	teamStructs := new([]*structs.TeamInfo)
 	for _, team := range teams {
-		asMap := team.(map[string]interface{})
+		asMap := util.As[map[string]interface{}](team)
 		curr := structs.TeamInfoFromMap(asMap)
 		*teamStructs = append(*teamStructs, curr)
 	}
 
 	appStructs := new([]*structs.AppInfo)
 	for _, app := range applications {
-		asMap := app.(map[string]interface{})
+		asMap := util.As[map[string]interface{}](app)
 		*appStructs = append(*appStructs, structs.AppInfoFromMap(asMap))
 	}
 
@@ -875,14 +875,14 @@ func updateApps(viewID string, m map[string]string, old, current []interface{}) 
 	toCreate := new([]*structs.AppInfo)
 
 	for _, app := range old {
-		oldMap := app.(map[string]interface{})
-		value := oldMap["app_id"].(string)
+		oldMap := util.As[map[string]interface{}](app)
+		value := util.As[string](oldMap["app_id"])
 		if !util.PairInList(current, "app_id", value) {
 			*toDelete = append(*toDelete, value)
 		} else {
 			for _, curr := range current {
-				currMap := curr.(map[string]interface{})
-				if currMap["app_id"].(string) == value && !reflect.DeepEqual(oldMap, currMap) {
+				currMap := util.As[map[string]interface{}](curr)
+				if util.As[string](currMap["app_id"]) == value && !reflect.DeepEqual(oldMap, currMap) {
 					info := structs.AppInfoFromMap(currMap)
 					*toUpdate = append(*toUpdate, info)
 				}
@@ -890,8 +890,8 @@ func updateApps(viewID string, m map[string]string, old, current []interface{}) 
 		}
 	}
 	for _, app := range current {
-		currMap := app.(map[string]interface{})
-		value := currMap["app_id"].(string)
+		currMap := util.As[map[string]interface{}](app)
+		value := util.As[string](currMap["app_id"])
 		if !util.PairInList(old, "app_id", value) {
 			info := structs.AppInfoFromMap(currMap)
 			info.ID = uuid.New().String()
@@ -919,14 +919,14 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 	oldUpdated := new([]*structs.TeamInfo)
 
 	for _, team := range old {
-		oldMap := team.(map[string]interface{})
-		value := oldMap["team_id"].(string)
+		oldMap := util.As[map[string]interface{}](team)
+		value := util.As[string](oldMap["team_id"])
 		if !util.PairInList(current, "team_id", value) {
 			*toDelete = append(*toDelete, value)
 		} else {
 			for _, curr := range current {
-				currMap := curr.(map[string]interface{})
-				if currMap["team_id"].(string) == value && !reflect.DeepEqual(oldMap, currMap) {
+				currMap := util.As[map[string]interface{}](curr)
+				if util.As[string](currMap["team_id"]) == value && !reflect.DeepEqual(oldMap, currMap) {
 					info := structs.TeamInfoFromMap(currMap)
 					*toUpdate = append(*toUpdate, info)
 					*oldUpdated = append(*oldUpdated, structs.TeamInfoFromMap(oldMap))
@@ -936,8 +936,8 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 	}
 
 	for _, team := range current {
-		currMap := team.(map[string]interface{})
-		value := currMap["team_id"].(string)
+		currMap := util.As[map[string]interface{}](team)
+		value := util.As[string](currMap["team_id"])
 		if !util.PairInList(old, "team_id", value) {
 			info := structs.TeamInfoFromMap(currMap)
 			*toCreate = append(*toCreate, info)
@@ -962,14 +962,14 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 				*toRemoveCurr = append(*toRemoveCurr, oldPerm)
 			}
 		}
-		permsToRemove[oldTeam.ID.(string)] = *toRemoveCurr
+		permsToRemove[util.As[string](oldTeam.ID)] = *toRemoveCurr
 
 		for _, currPerm := range currPerms {
 			if !util.StrSliceContains(&oldPerms, currPerm) {
 				*toAddCurr = append(*toAddCurr, currPerm)
 			}
 		}
-		permsToAdd[oldTeam.ID.(string)] = *toAddCurr
+		permsToAdd[util.As[string](oldTeam.ID)] = *toAddCurr
 	}
 
 	if err := api.UpdateTeamPermissions(permsToAdd, permsToRemove, m); err != nil {
@@ -978,7 +978,7 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 
 	appStructs := new([]*structs.AppInfo)
 	for _, app := range applications {
-		asMap := app.(map[string]interface{})
+		asMap := util.As[map[string]interface{}](app)
 		*appStructs = append(*appStructs, structs.AppInfoFromMap(asMap))
 	}
 
@@ -1035,15 +1035,15 @@ func updateUsers(oldUpdated, toUpdate *[]*structs.TeamInfo, m map[string]string,
 		*usersWithChangedRole = (*usersWithChangedRole)[:0]
 		if len(*currUsers) == 0 {
 			for _, user := range *oldUsers {
-				removedUsers[currTeam.ID.(string)] = append(removedUsers[currTeam.ID.(string)], user.ID)
+				removedUsers[util.As[string](currTeam.ID)] = append(removedUsers[util.As[string](currTeam.ID)], user.ID)
 			}
 		} else {
 			for _, oldUser := range *oldUsers {
 				if !structs.UserHasID(*currUsers, oldUser.ID) {
-					removedUsers[currTeam.ID.(string)] = append(removedUsers[currTeam.ID.(string)], oldUser.ID)
+					removedUsers[util.As[string](currTeam.ID)] = append(removedUsers[util.As[string](currTeam.ID)], oldUser.ID)
 				}
 			}
-			toChangeRole[oldTeam.ID.(string)] = *usersWithChangedRole
+			toChangeRole[util.As[string](oldTeam.ID)] = *usersWithChangedRole
 		}
 
 		*toAdd = (*toAdd)[:0]
@@ -1060,14 +1060,14 @@ func updateUsers(oldUpdated, toUpdate *[]*structs.TeamInfo, m map[string]string,
 					}
 				}
 				if found && old.Role != currUser.Role {
-					if err := api.SetUserRole(oldTeam.ID.(string), viewID, currUser, m); err != nil {
+					if err := api.SetUserRole(util.As[string](oldTeam.ID), viewID, currUser, m); err != nil {
 						return err
 					}
 				}
 			}
 		}
 
-		if err := api.AddUsersToTeam(toAdd, currTeam.ID.(string), m); err != nil {
+		if err := api.AddUsersToTeam(toAdd, util.As[string](currTeam.ID), m); err != nil {
 			return err
 		}
 	}
@@ -1105,9 +1105,9 @@ func updateInstances(old, current *[]*structs.TeamInfo, apps []interface{}, m ma
 		for _, currInst := range *currInstances {
 			if !structs.InstanceHasID(oldInstances, currInst.ID) {
 				for _, app := range apps {
-					asMap := app.(map[string]interface{})
+					asMap := util.As[map[string]interface{}](app)
 					if asMap["name"] == currInst.Name {
-						if _, err := api.AddApplication(asMap["app_id"].(string), oldTeam.ID.(string), currInst.DisplayOrder, m); err != nil {
+						if _, err := api.AddApplication(util.As[string](asMap["app_id"]), util.As[string](oldTeam.ID), currInst.DisplayOrder, m); err != nil {
 							return err
 						}
 					}
@@ -1126,12 +1126,12 @@ func updateInstances(old, current *[]*structs.TeamInfo, apps []interface{}, m ma
 					// instance does not carry Parent, and UpdateAppInstance sends it
 					// as applicationId (an empty value yields a 500).
 					for _, app := range apps {
-						asMap := app.(map[string]interface{})
+						asMap := util.As[map[string]interface{}](app)
 						if asMap["name"] == currInst.Name {
-							currInst.Parent = asMap["app_id"].(string)
+							currInst.Parent = util.As[string](asMap["app_id"])
 						}
 					}
-					if err := api.UpdateAppInstance(currInst, oldTeam.ID.(string), m); err != nil {
+					if err := api.UpdateAppInstance(currInst, util.As[string](oldTeam.ID), m); err != nil {
 						return err
 					}
 				}

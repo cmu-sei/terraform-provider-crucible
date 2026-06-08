@@ -6,7 +6,7 @@ package provider_test
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -31,7 +31,7 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 
 // Configuration strings. These are the things normally found in a .tf file
 
-// Config strings that map to the provider itself
+// Config strings that map to the provider itself.
 var correctCreds string
 var incorrectCreds string
 
@@ -39,7 +39,7 @@ var incorrectCreds string
 // player_virtual_machine_server_test.go), each provisioning its own
 // crucible_player_view to supply real team ids, so there are no VM config globals.
 
-// Config strings for views
+// Config strings for views.
 var configViewEmpty string
 var configViewEmptyUpdated string
 var configViewApps string
@@ -52,7 +52,7 @@ var configViewInstances string
 var configViewInstancesUpdated string
 var configViewInstancesNoInst string
 
-// Structs representing expected state for views
+// Structs representing expected state for views.
 var emptyViewExpected *structs.ViewInfo
 var emptyViewExpectedUpdated *structs.ViewInfo
 var appsViewExpected *structs.ViewInfo
@@ -64,11 +64,11 @@ var userViewExpectedUpdated *structs.ViewInfo
 var instanceViewExpected *structs.ViewInfo
 var instanceViewExpectedUpdated *structs.ViewInfo
 
-// Config strings for app templates
+// Config strings for app templates.
 var configAppTemplate string
 var configAppTemplateUpdated string
 
-// Set up the globals
+// Set up the globals.
 func init() {
 	fp, err := os.Open("../../configs/testConfigs.json")
 	if err != nil {
@@ -76,13 +76,15 @@ func init() {
 	}
 	defer fp.Close()
 
-	bytes, err := ioutil.ReadAll(fp)
+	bytes, err := io.ReadAll(fp)
 	if err != nil {
 		panic(err)
 	}
 
 	var asMap map[string]interface{}
-	json.Unmarshal([]byte(bytes), &asMap)
+	if err := json.Unmarshal(bytes, &asMap); err != nil {
+		panic(err)
+	}
 
 	correctCreds = getCreds()
 	incorrectCreds = getIncorrectCreds()
@@ -510,7 +512,7 @@ func getIncorrectCreds() string {
 }
 
 func getViewResource(key string, file *map[string]interface{}) string {
-	resource := (*file)[key].(map[string]interface{})
+	resource := util.As[map[string]interface{}]((*file)[key])
 	if resource == nil {
 		panic("key not found in file")
 	}
@@ -519,41 +521,41 @@ func getViewResource(key string, file *map[string]interface{}) string {
 		name = "%s"
 		description = "%s"
 		status = "%s"
-		`, resource["provider_name"].(string), resource["resourceName"].(string), resource["name"].(string),
-		resource["description"].(string), resource["status"].(string))
+		`, util.As[string](resource["provider_name"]), util.As[string](resource["resourceName"]), util.As[string](resource["name"]),
+		util.As[string](resource["description"]), util.As[string](resource["status"]))
 
 	// Consider applications
 	if apps, ok := resource["applications"]; ok {
-		appList := apps.([]interface{})
+		appList := util.As[[]interface{}](apps)
 
 		for _, app := range appList {
-			asMap := app.(map[string]interface{})
+			asMap := util.As[map[string]interface{}](app)
 
 			// Handle optional arguments
 			var url string
 			if asMap["url"] != nil {
-				url = "\"" + asMap["url"].(string) + "\""
+				url = "\"" + util.As[string](asMap["url"]) + "\""
 			} else {
 				url = "null"
 			}
 
 			var icon string
 			if asMap["icon"] != nil {
-				icon = "\"" + asMap["icon"].(string) + "\""
+				icon = "\"" + util.As[string](asMap["icon"]) + "\""
 			} else {
 				icon = "null"
 			}
 
 			var embeddable string
 			if asMap["embeddable"] != nil {
-				embeddable = "\"" + asMap["embeddable"].(string) + "\""
+				embeddable = "\"" + util.As[string](asMap["embeddable"]) + "\""
 			} else {
 				embeddable = "null"
 			}
 
 			var load_in_background string
 			if asMap["load_in_background"] != nil {
-				load_in_background = "\"" + asMap["load_in_background"].(string) + "\""
+				load_in_background = "\"" + util.As[string](asMap["load_in_background"]) + "\""
 			} else {
 				load_in_background = "null"
 			}
@@ -566,30 +568,30 @@ func getViewResource(key string, file *map[string]interface{}) string {
 				embeddable = %s
 				load_in_background = %s
 				}
-				`, asMap["name"].(string), url, icon, embeddable, load_in_background)
+				`, util.As[string](asMap["name"]), url, icon, embeddable, load_in_background)
 			view += curr
 		}
 		// Consider teams
 		if teams, ok := resource["teams"]; ok {
-			teamList := teams.([]interface{})
+			teamList := util.As[[]interface{}](teams)
 			for _, team := range teamList {
-				asMap := team.(map[string]interface{})
+				asMap := util.As[map[string]interface{}](team)
 
 				var name string
 				if asMap["name"] != nil {
-					name = "\"" + asMap["name"].(string) + "\""
+					name = "\"" + util.As[string](asMap["name"]) + "\""
 				} else {
 					name = "null"
 				}
 
 				var role string
 				if asMap["role"] != nil {
-					role = "\"" + asMap["role"].(string) + "\""
+					role = "\"" + util.As[string](asMap["role"]) + "\""
 				} else {
 					role = "null"
 				}
 
-				permissions := asMap["permissions"].([]interface{})
+				permissions := util.As[[]interface{}](asMap["permissions"])
 				permissionsStr := util.ToStringSlice(&permissions)
 				for i, entry := range *permissionsStr {
 					(*permissionsStr)[i] = "\"" + entry + "\""
@@ -604,13 +606,13 @@ func getViewResource(key string, file *map[string]interface{}) string {
 
 				// Handle users
 				if asMap["users"] != nil {
-					users := asMap["users"].([]interface{})
+					users := util.As[[]interface{}](asMap["users"])
 					for _, user := range users {
-						userMap := user.(map[string]interface{})
+						userMap := util.As[map[string]interface{}](user)
 
 						var userRole string
 						if userMap["role"] != nil {
-							userRole = "\"" + userMap["role"].(string) + "\""
+							userRole = "\"" + util.As[string](userMap["role"]) + "\""
 						} else {
 							userRole = "null"
 						}
@@ -627,13 +629,13 @@ func getViewResource(key string, file *map[string]interface{}) string {
 
 				// Handle app instances
 				if asMap["app_instances"] != nil {
-					instances := asMap["app_instances"].([]interface{})
+					instances := util.As[[]interface{}](asMap["app_instances"])
 					for _, inst := range instances {
-						instMap := inst.(map[string]interface{})
+						instMap := util.As[map[string]interface{}](inst)
 
 						var display string
 						if instMap["display_order"] != nil {
-							display = strconv.FormatFloat(instMap["display_order"].(float64), 'f', 0, 64)
+							display = strconv.FormatFloat(util.As[float64](instMap["display_order"]), 'f', 0, 64)
 						} else {
 							display = "null"
 						}
@@ -656,7 +658,7 @@ func getViewResource(key string, file *map[string]interface{}) string {
 }
 
 func getTemplateResource(key string, file *map[string]interface{}) string {
-	resource := (*file)[key].(map[string]interface{})
+	resource := util.As[map[string]interface{}]((*file)[key])
 
 	return fmt.Sprintf(`resource "%s" "%s" {
 		name = "%s"

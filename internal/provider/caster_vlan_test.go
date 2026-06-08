@@ -159,12 +159,10 @@ func testAccVlanDestroyed(idPtr *string) resource.TestCheckFunc {
 		if *idPtr == "" {
 			return nil
 		}
-		vlan, err := api.ReadVlan(*idPtr, getMap())
-		if err != nil {
-			// A released vlan may 404 on read; treat that as destroyed.
-			return nil
-		}
-		if vlan.InUse {
+		// A released vlan may 404 on read; ReadVlan returns a nil vlan on error,
+		// so a nil (or not-in-use) vlan means destroyed.
+		vlan, _ := api.ReadVlan(*idPtr, getMap())
+		if vlan != nil && vlan.InUse {
 			return fmt.Errorf("vlan %s still in use after destroy", *idPtr)
 		}
 		return nil

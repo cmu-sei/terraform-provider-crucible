@@ -63,10 +63,10 @@ func TestAccVMBasicSuccessful(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0)),
+				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "foo", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
-						"http://example.com", "foo", vmUserID(), 1),
+						"foo", vmUserID(), 1),
 					resource.TestCheckResourceAttrPair(
 						"crucible_player_virtual_machine.test", "team_ids.0",
 						"crucible_player_view.fix", "team.0.team_id"),
@@ -119,19 +119,19 @@ func TestAccVMUpdate(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0)),
+				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "foo", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
-						"http://example.com", "foo", vmUserID(), 1),
+						"foo", vmUserID(), 1),
 					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
 						"http://example.com", "foo", vmUserID()),
 				),
 			},
 			{
-				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "bar", 0)),
+				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "bar", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
-						"http://example.com", "bar", vmUserID(), 1),
+						"bar", vmUserID(), 1),
 					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
 						"http://example.com", "bar", vmUserID()),
 				),
@@ -159,11 +159,11 @@ func TestAccVMMultipleCreate(t *testing.T) {
 				Config: tfConfig(vmMultipleConfig(vmMultipleViewName)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.first", vmIDFirst,
-						"http://example.com", "first", vmUserID(), 1),
+						"first", vmUserID(), 1),
 					testAccVMRemoteMatchesState("crucible_player_virtual_machine.first",
 						"http://example.com", "first", vmUserID()),
 					testAccVMVerifyLocal("crucible_player_virtual_machine.second", vmIDSecond,
-						"http://example.com", "second", vmUserID(), 1),
+						"second", vmUserID(), 1),
 					testAccVMRemoteMatchesState("crucible_player_virtual_machine.second",
 						"http://example.com", "second", vmUserID()),
 				),
@@ -184,28 +184,28 @@ func TestAccVMMoveTeams(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1)),
+				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "foo", 0, 1)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
-						"http://example.com", "foo", vmUserID(), 2),
+						"foo", vmUserID(), 2),
 					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
 						"http://example.com", "foo", vmUserID()),
 				),
 			},
 			{
-				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0)),
+				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "foo", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
-						"http://example.com", "foo", vmUserID(), 1),
+						"foo", vmUserID(), 1),
 					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
 						"http://example.com", "foo", vmUserID()),
 				),
 			},
 			{
-				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1)),
+				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "foo", 0, 1)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
-						"http://example.com", "foo", vmUserID(), 2),
+						"foo", vmUserID(), 2),
 					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
 						"http://example.com", "foo", vmUserID()),
 				),
@@ -239,7 +239,13 @@ func vmTeamViewFixture(viewName string, teams int) string {
 // vmViewVMConfig builds a view fixture (teamCount teams) plus a single VM that is
 // a member of the teams at the given indexes (referencing their computed
 // team_id). Used by the basic/update/move tests.
-func vmViewVMConfig(viewName string, teamCount int, vmRes, vmID, url, name string, teamIdxs ...int) string {
+func vmViewVMConfig(viewName string, teamCount int, name string, teamIdxs ...int) string {
+	// The VM resource name, vm_id, and url are identical across every caller, so
+	// they are fixed here rather than passed as always-identical parameters; only
+	// the view shape (teamCount/teamIdxs) and the VM name vary.
+	const vmRes = "test"
+	const vmID = vmIDNormal
+	const url = "http://example.com"
 	exprs := make([]string, len(teamIdxs))
 	for i, idx := range teamIdxs {
 		exprs[i] = fmt.Sprintf("crucible_player_view.%s.team[%d].team_id", vmTestViewRes, idx)
@@ -289,7 +295,10 @@ func vmBadUserIDConfig() string {
 // scalar fields against expected constants, and the team_ids count). The team ids
 // themselves are computed (the fixture's freshly-created teams), so they are
 // asserted by membership count here and by remote/round-trip checks elsewhere.
-func testAccVMVerifyLocal(res, id, url, name, userID string, teamCount int) resource.TestCheckFunc {
+func testAccVMVerifyLocal(res, id, name, userID string, teamCount int) resource.TestCheckFunc {
+	// Every caller uses the same VM url; fixed here rather than passed as an
+	// always-identical parameter.
+	const url = "http://example.com"
 	return resource.ComposeTestCheckFunc(
 		resource.TestCheckResourceAttr(res, "vm_id", id),
 		resource.TestCheckResourceAttr(res, "name", name),

@@ -32,7 +32,7 @@ import (
 // 5. Terraform destroys the resource
 
 // Expected behavior:
-// The resource is created, updated, and destroyed without error
+// The resource is created, updated, and destroyed without error.
 func TestAccEmptyView(t *testing.T) {
 	sweepViewByName(t, "test")
 	registerViewCleanupByName(t, "test")
@@ -104,7 +104,7 @@ func TestAccIncorrectCreds(t *testing.T) {
 // Execution steps: Same as above, there's just applications inside the view now
 //
 // Expected behavior:
-// The resource is created, updated, and destroyed without error
+// The resource is created, updated, and destroyed without error.
 func TestAccViewWithApps(t *testing.T) {
 	sweepViewByName(t, "test")
 	registerViewCleanupByName(t, "test")
@@ -135,7 +135,7 @@ func TestAccViewWithApps(t *testing.T) {
 // Execution steps: Same as above
 //
 // Expected behavior:
-// The resource is created, updated, and destroyed without error
+// The resource is created, updated, and destroyed without error.
 func TestAccViewWithTeams(t *testing.T) {
 	sweepViewByName(t, "test")
 	registerViewCleanupByName(t, "test")
@@ -177,7 +177,7 @@ func TestAccViewWithTeams(t *testing.T) {
 // Execution steps: Same as before
 //
 // Expected behavior:
-// Resource is created, updated, and destroyed without error
+// Resource is created, updated, and destroyed without error.
 func TestAccViewWithUsers(t *testing.T) {
 	sweepViewByName(t, "test")
 	registerViewCleanupByName(t, "test")
@@ -208,7 +208,7 @@ func TestAccViewWithUsers(t *testing.T) {
 // Execution steps: Same as before, but also test that instances can be removed and added
 //
 // Expected behavior:
-// View can be created and updated without error
+// View can be created and updated without error.
 func TestAccViewInstances(t *testing.T) {
 	sweepViewByName(t, "test")
 	registerViewCleanupByName(t, "test")
@@ -391,21 +391,21 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 				if app.Name == nil {
 					appName = "null"
 				} else {
-					appName = app.Name.(string)
+					appName = util.As[string](app.Name)
 				}
 
 				var appURL string
 				if app.URL == nil {
 					appURL = "null"
 				} else {
-					appURL = app.URL.(string)
+					appURL = util.As[string](app.URL)
 				}
 
 				var appIcon string
 				if app.Icon == nil {
 					appIcon = "null"
 				} else {
-					appIcon = app.Icon.(string)
+					appIcon = util.As[string](app.Icon)
 				}
 
 				// embeddable / load_in_background are string-typed attributes on
@@ -418,7 +418,7 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 				if app.AppTemplateID == nil {
 					appTemplate = "null"
 				} else {
-					appTemplate = app.AppTemplateID.(string)
+					appTemplate = util.As[string](app.AppTemplateID)
 				}
 
 				// app_id and the view id are server-assigned and unknowable at
@@ -546,7 +546,7 @@ func testAccVerifyRemoteView(view *structs.ViewInfo) resource.TestCheckFunc {
 
 		teams := remote.Teams
 		sort.Slice(teams, func(i, j int) bool {
-			return teams[i].Name.(string) < teams[j].Name.(string)
+			return util.As[string](teams[i].Name) < util.As[string](teams[j].Name)
 		})
 		// Get rid of admin team
 		teams = teams[1:]

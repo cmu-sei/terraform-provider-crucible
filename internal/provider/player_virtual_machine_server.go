@@ -10,6 +10,7 @@ import (
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -404,11 +405,11 @@ func (r *virtualMachineResource) read(ctx context.Context, m *vmModel) diag.Diag
 		m.UserID = types.StringNull()
 	}
 
-	connection, d := flattenConnection(ctx, info.Connection)
+	connection, d := flattenConnection(info.Connection)
 	diags.Append(d...)
 	m.Connection = connection
 
-	proxmox, d := flattenProxmox(ctx, info.Proxmox)
+	proxmox, d := flattenProxmox(info.Proxmox)
 	diags.Append(d...)
 	m.Proxmox = proxmox
 
@@ -446,7 +447,7 @@ func expandConnection(ctx context.Context, list types.List) (*structs.ConsoleCon
 }
 
 // flattenConnection converts a ConsoleConnection struct into a block list.
-func flattenConnection(ctx context.Context, conn *structs.ConsoleConnection) (types.List, diag.Diagnostics) {
+func flattenConnection(conn *structs.ConsoleConnection) (types.List, diag.Diagnostics) {
 	objType := types.ObjectType{AttrTypes: consoleConnectionAttrTypes}
 	if conn == nil {
 		return types.ListNull(objType), nil
@@ -495,7 +496,7 @@ func expandProxmox(ctx context.Context, list types.List) (*structs.ProxmoxInfo, 
 }
 
 // flattenProxmox converts a ProxmoxInfo struct into a block list.
-func flattenProxmox(ctx context.Context, proxmox *structs.ProxmoxInfo) (types.List, diag.Diagnostics) {
+func flattenProxmox(proxmox *structs.ProxmoxInfo) (types.List, diag.Diagnostics) {
 	objType := types.ObjectType{AttrTypes: proxmoxAttrTypes}
 	if proxmox == nil {
 		return types.ListNull(objType), nil
@@ -503,9 +504,9 @@ func flattenProxmox(ctx context.Context, proxmox *structs.ProxmoxInfo) (types.Li
 
 	asMap := proxmox.ToMap()
 	obj, diags := types.ObjectValue(proxmoxAttrTypes, map[string]attr.Value{
-		"id":   types.StringValue(asMap["id"].(string)),
-		"node": types.StringValue(asMap["node"].(string)),
-		"type": types.StringValue(asMap["type"].(string)),
+		"id":   types.StringValue(util.As[string](asMap["id"])),
+		"node": types.StringValue(util.As[string](asMap["node"])),
+		"type": types.StringValue(util.As[string](asMap["type"])),
 	})
 	if diags.HasError() {
 		return types.ListNull(objType), diags

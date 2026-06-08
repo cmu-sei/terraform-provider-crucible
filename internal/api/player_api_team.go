@@ -12,6 +12,7 @@ import (
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 )
 
 // This file adapts the provider's team operations onto the generated Player API
@@ -100,7 +101,7 @@ func UpdateTeams(teams *[]*structs.TeamInfo, m map[string]string) error {
 		if err != nil {
 			return err
 		}
-		teamID, err := uuid.Parse(team.ID.(string))
+		teamID, err := uuid.Parse(util.As[string](team.ID))
 		if err != nil {
 			return err
 		}
@@ -143,7 +144,7 @@ func DeleteTeams(ids *[]string, m map[string]string) error {
 // AddPermissionsToTeam adds each team's specified permissions to that team.
 func AddPermissionsToTeam(teams *[]*structs.TeamInfo, m map[string]string) error {
 	for _, team := range *teams {
-		teamID := team.ID.(string)
+		teamID := util.As[string](team.ID)
 		for _, perm := range team.Permissions {
 			if err := addTeamPermission(teamID, perm, m); err != nil {
 				return err
@@ -298,7 +299,7 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 
 	// Read users and app instances for each team.
 	for i, team := range *teams {
-		id := team.ID.(string)
+		id := util.As[string](team.ID)
 		users, err := getUsersInTeam(id, viewID, m)
 		if err != nil {
 			return nil, err

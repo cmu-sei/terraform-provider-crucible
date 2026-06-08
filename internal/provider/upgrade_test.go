@@ -127,12 +127,8 @@ func TestAccUpgradeAppTemplate(t *testing.T) {
 		Steps: upgradeStepsWithUpdate(
 			tfConfig(configAppTemplate),
 			tfConfig(configAppTemplateUpdated),
-			verifyRemoteTemplate("TestTemplate", "http://example.com",
-				"https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
-				"false", "false"),
-			verifyRemoteTemplate("TestTemplateUpdated", "http://example.com",
-				"https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
-				"false", "false"),
+			verifyRemoteTemplate("TestTemplate"),
+			verifyRemoteTemplate("TestTemplateUpdated"),
 		),
 	})
 }

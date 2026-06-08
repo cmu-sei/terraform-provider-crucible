@@ -15,11 +15,22 @@ import (
 
 // Helper functions used throughout provider
 
+// As performs a checked type assertion of v to T, returning the zero value of T
+// when v is nil or not a T. It exists so the many decodes of Terraform's
+// map[string]interface{} schema data don't each repeat the comma-ok dance (and
+// don't trip forcetypeassert with bare v.(T) assertions). The zero-value-on-miss
+// behavior matches the previous code's effective handling: an absent optional
+// attribute decodes to "" / 0 / nil rather than panicking.
+func As[T any](v interface{}) T {
+	t, _ := v.(T)
+	return t
+}
+
 // ToStringSlice converts a slice of empty interfaces to a slice of strings. Go won't let us do this implicitly.
 func ToStringSlice(data *[]interface{}) *[]string {
 	var converted []string
 	for _, entry := range *data {
-		converted = append(converted, entry.(string))
+		converted = append(converted, As[string](entry))
 	}
 	return &converted
 }
@@ -89,10 +100,10 @@ func AuthedHTTPClient(m map[string]string) *http.Client {
 	return c
 }
 
-// PairInList returns true if a given key/value pair exists somewhere in a list of maps
+// PairInList returns true if a given key/value pair exists somewhere in a list of maps.
 func PairInList(list []interface{}, key, value string) bool {
 	for _, curr := range list {
-		asMap := curr.(map[string]interface{})
+		asMap := As[map[string]interface{}](curr)
 		if asMap[key] == value {
 			return true
 		}
@@ -106,7 +117,7 @@ func PairInList(list []interface{}, key, value string) bool {
 //
 // param a: The value to return if condition is true
 //
-// param b: The value to return if condition is false
+// param b: The value to return if condition is false.
 func Ternary(condition bool, a, b interface{}) interface{} {
 	if condition {
 		return a
@@ -120,7 +131,7 @@ func Ternary(condition bool, a, b interface{}) interface{} {
 //
 // param str: The string to look for
 //
-// Returns true if str is in arr and false if not
+// Returns true if str is in arr and false if not.
 func StrSliceContains(arr *[]string, str string) bool {
 	for _, elem := range *arr {
 		if elem == str {
@@ -130,17 +141,17 @@ func StrSliceContains(arr *[]string, str string) bool {
 	return false
 }
 
-// Returns the normalized url for the player api
+// Returns the normalized url for the player api.
 func GetPlayerApiUrl(m map[string]string) string {
 	return GetApiUrl(m, "player_api_url")
 }
 
-// Returns the normalized url for the vm api
+// Returns the normalized url for the vm api.
 func GetVmApiUrl(m map[string]string) string {
 	return GetApiUrl(m, "vm_api_url")
 }
 
-// Returns the normalized url for the caster api
+// Returns the normalized url for the caster api.
 func GetCasterApiUrl(m map[string]string) string {
 	return GetApiUrl(m, "caster_api_url")
 }
@@ -151,7 +162,7 @@ func GetCasterApiUrl(m map[string]string) string {
 //
 // param urlName: The name of the url setting in the map
 //
-// Returns empty string is urlName is not found in the map
+// Returns empty string is urlName is not found in the map.
 func GetApiUrl(m map[string]string, urlName string) string {
 	log.Printf("! Getting API Url for %s", urlName)
 	if url, exists := m[urlName]; exists {

@@ -193,10 +193,10 @@ func AddApplication(appID, teamID string, displayOrder float64, m map[string]str
 		return "", err
 	}
 	if resp.StatusCode() != http.StatusCreated {
-		return "", fmt.Errorf("Player API returned with status %d when adding application to team", resp.StatusCode())
+		return "", fmt.Errorf("player API returned with status %d when adding application to team", resp.StatusCode())
 	}
 	if resp.JSON201 == nil || resp.JSON201.Id == nil {
-		return "", fmt.Errorf("Player API returned status 201 with no id when adding application to team")
+		return "", fmt.Errorf("player API returned status 201 with no id when adding application to team")
 	}
 	return resp.JSON201.Id.String(), nil
 }
@@ -243,7 +243,7 @@ func readApps(id string, m map[string]string) (*[]structs.AppInfo, error) {
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Player API returned with status %d when retreiving application info", resp.StatusCode())
+		return nil, fmt.Errorf("player API returned with status %d when retreiving application info", resp.StatusCode())
 	}
 
 	apps := new([]structs.AppInfo)
@@ -287,7 +287,7 @@ func getTeamAppInstances(teamID string, m map[string]string) (*[]structs.AppInst
 		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Player API returned with status %d when retreiving application info", resp.StatusCode())
+		return nil, fmt.Errorf("player API returned with status %d when retreiving application info", resp.StatusCode())
 	}
 
 	instances := new([]structs.AppInstance)

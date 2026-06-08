@@ -98,10 +98,8 @@ func registerAppTemplateCleanup(t *testing.T, idPtr *string) {
 			// The Player API returns 200 with an empty body for a missing
 			// template (not 404), so AppTemplateExists is always true. Use the
 			// read + empty-Name signal the destroy check uses instead.
-			tmpl, err := api.AppTemplateRead(*idPtr, getMap())
-			if err != nil {
-				return false, nil // unreadable => treat as gone
-			}
+			// Unreadable (nil/zero template on error) => treat as gone.
+			tmpl, _ := api.AppTemplateRead(*idPtr, getMap())
 			return tmpl != nil && tmpl.Name != "", nil
 		},
 		func() error { return api.DeleteAppTemplate(*idPtr, getMap()) })
@@ -116,11 +114,9 @@ func registerVlanCleanup(t *testing.T, idPtr *string) {
 			// A vlan record persists in the pool after release; only InUse
 			// indicates an actual leak (still acquired). DeleteVlan (release) on
 			// an already-released vlan would error, so gate on InUse.
-			vlan, err := api.ReadVlan(*idPtr, getMap())
-			if err != nil {
-				return false, nil // unreadable => treat as gone
-			}
-			return vlan.InUse, nil
+			// Unreadable (nil vlan on error) => treat as gone.
+			vlan, _ := api.ReadVlan(*idPtr, getMap())
+			return vlan != nil && vlan.InUse, nil
 		},
 		func() error { return api.DeleteVlan(*idPtr, getMap()) })
 }

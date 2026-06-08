@@ -17,7 +17,7 @@ import (
 // the compiled binary via the main.version ldflag.
 var version string = "dev"
 
-// Runs the provider
+// Runs the provider.
 func main() {
 	var debug bool
 
