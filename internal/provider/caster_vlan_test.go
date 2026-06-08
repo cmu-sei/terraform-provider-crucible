@@ -58,7 +58,7 @@ func TestAccVlan(t *testing.T) {
 		CheckDestroy: testAccVlanDestroyed(&secondID),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vlanConfig(partitionID, vlanID1),
+				Config: tfConfig(vlanConfig(partitionID, vlanID1)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_vlan.test", "vlan_id", vlanID1),
 					resource.TestCheckResourceAttrSet("crucible_vlan.test", "partition_id"),
@@ -68,7 +68,7 @@ func TestAccVlan(t *testing.T) {
 			{
 				// Changing vlan_id forces replacement; capture the new id and
 				// assert it differs from the first.
-				Config: correctCreds + vlanConfig(partitionID, vlanID2),
+				Config: tfConfig(vlanConfig(partitionID, vlanID2)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_vlan.test", "vlan_id", vlanID2),
 					testAccVlanRemoteInUse("crucible_vlan.test", &secondID),
@@ -84,7 +84,7 @@ func TestAccVlan(t *testing.T) {
 				// Plan-stability guard: re-applying the same config must produce
 				// an empty plan (idempotence). The computed partition_id and the
 				// acquired vlan must not re-plan.
-				Config: correctCreds + vlanConfig(partitionID, vlanID2),
+				Config: tfConfig(vlanConfig(partitionID, vlanID2)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),
@@ -113,7 +113,7 @@ func TestAccVlanByProject(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vlanByProjectConfig(projectID),
+				Config: tfConfig(vlanByProjectConfig(projectID)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_vlan.test", "project_id", projectID),
 					resource.TestCheckResourceAttrSet("crucible_vlan.test", "vlan_id"),

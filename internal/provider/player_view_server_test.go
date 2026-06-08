@@ -5,6 +5,7 @@ package provider_test
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ func TestAccEmptyView(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				// Create resource and check
-				Config: correctCreds + configViewEmpty,
+				Config: tfConfig(configViewEmpty),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.empty", emptyViewExpected),
 					testAccVerifyRemoteView(emptyViewExpected),
@@ -49,7 +50,7 @@ func TestAccEmptyView(t *testing.T) {
 			},
 			{
 				// Update resource and check
-				Config: correctCreds + configViewEmptyUpdated,
+				Config: tfConfig(configViewEmptyUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.empty", emptyViewExpectedUpdated),
 					testAccVerifyRemoteView(&structs.ViewInfo{
@@ -71,6 +72,33 @@ func TestAccEmptyView(t *testing.T) {
 	})
 }
 
+// TestAccIncorrectCreds verifies the provider surfaces an authentication failure
+// when configured with a bad password. The provider does not fetch a token at
+// Configure time — it stashes the credentials and the OAuth2 password grant runs
+// lazily on the first API call — so the failure appears when the view create
+// issues its first Player request, not at provider-config time. A real resource is
+// therefore required to trigger it (mirroring TestAccVMBasicFail). The create fails
+// before any view exists, so no cleanup/CheckDestroy is needed.
+func TestAccIncorrectCreds(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfigBadCreds(configViewEmpty),
+				// The OAuth2 password grant fails at the IDP before any Player
+				// request is sent, surfacing as
+				//   oauth2: "invalid_grant" "<idp message>"
+				// on the first API call (the view create). invalid_grant is the
+				// RFC 6749 error code (a stable protocol constant); match on it
+				// rather than any one IDP's freeform message wording. (ExpectError
+				// only matches the error string — there is no Player HTTP status to
+				// assert on here, since the failure is in the token exchange.)
+				ExpectError: regexp.MustCompile(`invalid_grant`),
+			},
+		},
+	})
+}
+
 // Test case for creating and updating a view with applications inside of it.
 //
 // Execution steps: Same as above, there's just applications inside the view now
@@ -85,14 +113,14 @@ func TestAccViewWithApps(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configViewApps,
+				Config: tfConfig(configViewApps),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.apps", appsViewExpected),
 					testAccVerifyRemoteView(appsViewExpected),
 				),
 			},
 			{
-				Config: correctCreds + configViewAppsUpdated,
+				Config: tfConfig(configViewAppsUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.apps", appsViewExpectedUpdated),
 					testAccVerifyRemoteView(appsViewExpectedUpdated),
@@ -116,13 +144,13 @@ func TestAccViewWithTeams(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configViewTeams,
+				Config: tfConfig(configViewTeams),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.teams", teamViewExpected),
 					testAccVerifyRemoteView(teamViewExpected)),
 			},
 			{
-				Config: correctCreds + configViewTeamsUpdated,
+				Config: tfConfig(configViewTeamsUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.teams", teamViewExpectedUpdated),
 					testAccVerifyRemoteView(teamViewExpectedUpdated)),
@@ -133,7 +161,7 @@ func TestAccViewWithTeams(t *testing.T) {
 				// (status, team role, app_instance display_order) and the
 				// config-order-preserving sort of teams/users/instances/
 				// permissions on read.
-				Config: correctCreds + configViewTeamsUpdated,
+				Config: tfConfig(configViewTeamsUpdated),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),
@@ -158,14 +186,14 @@ func TestAccViewWithUsers(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configViewUsers,
+				Config: tfConfig(configViewUsers),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.users", userViewExpected),
 					testAccVerifyRemoteView(userViewExpected),
 				),
 			},
 			{
-				Config: correctCreds + configViewUsersUpdated,
+				Config: tfConfig(configViewUsersUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.users", userViewExpectedUpdated),
 					testAccVerifyRemoteView(userViewExpectedUpdated),
@@ -190,7 +218,7 @@ func TestAccViewInstances(t *testing.T) {
 		Steps: []resource.TestStep{
 			// View with 2 app instances
 			{
-				Config: correctCreds + configViewInstances,
+				Config: tfConfig(configViewInstances),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpected),
 					testAccVerifyRemoteView(instanceViewExpected),
@@ -198,7 +226,7 @@ func TestAccViewInstances(t *testing.T) {
 			},
 			// Remove the app instances (same resource, updated in place).
 			{
-				Config: correctCreds + configViewInstancesNoInst,
+				Config: tfConfig(configViewInstancesNoInst),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", userViewExpected),
 					testAccVerifyRemoteView(userViewExpected),
@@ -206,7 +234,7 @@ func TestAccViewInstances(t *testing.T) {
 			},
 			// Add them back
 			{
-				Config: correctCreds + configViewInstances,
+				Config: tfConfig(configViewInstances),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpected),
 					testAccVerifyRemoteView(instanceViewExpected),
@@ -214,7 +242,7 @@ func TestAccViewInstances(t *testing.T) {
 			},
 			// Update the instances
 			{
-				Config: correctCreds + configViewInstancesUpdated,
+				Config: tfConfig(configViewInstancesUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpectedUpdated),
 					testAccVerifyRemoteView(instanceViewExpectedUpdated),
@@ -253,7 +281,7 @@ func TestAccViewUserRoleStablePlan(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				// Create with one user and no configured role.
-				Config: correctCreds + viewOneUserConfig("appA", userID),
+				Config: tfConfig(viewOneUserConfig("appA", userID)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view.regrole", "team.0.user.0.user_id", userID),
 					resource.TestCheckResourceAttr("crucible_player_view.regrole", "team.0.user.0.role", ""),
@@ -262,7 +290,7 @@ func TestAccViewUserRoleStablePlan(t *testing.T) {
 			{
 				// Change only the application name. The user's role must stay a
 				// known "" in the plan, not flip to unknown.
-				Config: correctCreds + viewOneUserConfig("appB", userID),
+				Config: tfConfig(viewOneUserConfig("appB", userID)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectKnownValue(

@@ -457,6 +457,20 @@ func init() {
 
 // Helper functions for setting up configs
 
+// tfConfig prepends the standard (correct) provider block to a resource config,
+// producing a complete Terraform configuration. This replaces the
+// `correctCreds + cfg` concatenation used throughout the acceptance tests.
+func tfConfig(resourceConfig string) string {
+	return correctCreds + resourceConfig
+}
+
+// tfConfigBadCreds is tfConfig's counterpart for the negative auth test: it
+// prepends the provider block with an incorrect password so the first API call
+// fails the OAuth2 password grant.
+func tfConfigBadCreds(resourceConfig string) string {
+	return incorrectCreds + resourceConfig
+}
+
 func getCreds() string {
 	ret := fmt.Sprintf(`provider "%s" {
 		username = "%s"

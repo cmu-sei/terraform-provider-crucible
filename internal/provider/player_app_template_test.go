@@ -37,7 +37,7 @@ func TestAccAppTemplate(t *testing.T) {
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.test"),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configAppTemplate,
+				Config: tfConfig(configAppTemplate),
 				Check: resource.ComposeTestCheckFunc(
 					captureID("crucible_player_application_template.test", "", &templateID),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "name", "TestTemplate"),
@@ -50,7 +50,7 @@ func TestAccAppTemplate(t *testing.T) {
 				),
 			},
 			{
-				Config: correctCreds + configAppTemplateUpdated,
+				Config: tfConfig(configAppTemplateUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "name", "TestTemplateUpdated"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "url", "http://example.com"),
@@ -86,13 +86,13 @@ func TestAccAppTemplateOmittedFieldsStable(t *testing.T) {
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.minimal"),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + appTemplateMinimalConfig("acc-min-template"),
+				Config: tfConfig(appTemplateMinimalConfig("acc-min-template")),
 				Check:  captureID("crucible_player_application_template.minimal", "", &templateID),
 			},
 			{
 				// Edit name (a sibling); the omitted url/icon/embeddable/
 				// load_in_background must stay known, carried from state.
-				Config: correctCreds + appTemplateMinimalConfig("acc-min-template-2"),
+				Config: tfConfig(appTemplateMinimalConfig("acc-min-template-2")),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectKnownValue("crucible_player_application_template.minimal",
@@ -126,7 +126,7 @@ func TestAccAppTemplateDetectsExternalDelete(t *testing.T) {
 		CheckDestroy:             testAccTemplateDestroyed("crucible_player_application_template.minimal"),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + appTemplateMinimalConfig("acc-extdel-template"),
+				Config: tfConfig(appTemplateMinimalConfig("acc-extdel-template")),
 				Check:  captureID("crucible_player_application_template.minimal", "", &templateID),
 			},
 			{
@@ -137,7 +137,7 @@ func TestAccAppTemplateDetectsExternalDelete(t *testing.T) {
 						t.Fatalf("failed to delete template out of band: %v", err)
 					}
 				},
-				Config: correctCreds + appTemplateMinimalConfig("acc-extdel-template"),
+				Config: tfConfig(appTemplateMinimalConfig("acc-extdel-template")),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectResourceAction("crucible_player_application_template.minimal",

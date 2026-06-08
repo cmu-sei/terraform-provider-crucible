@@ -63,7 +63,7 @@ func TestAccVMBasicSuccessful(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0),
+				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
 						"http://example.com", "foo", vmUserID(), 1),
@@ -93,7 +93,7 @@ func TestAccVMBasicFail(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmBadUserIDConfig(),
+				Config: tfConfig(vmBadUserIDConfig()),
 				// The config supplies a malformed user_id ("_"). The typed VM
 				// client (internal/vmclient) parses ids into UUIDs before issuing
 				// the request, so an invalid value is now rejected client-side
@@ -119,7 +119,7 @@ func TestAccVMUpdate(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0),
+				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
 						"http://example.com", "foo", vmUserID(), 1),
@@ -128,7 +128,7 @@ func TestAccVMUpdate(t *testing.T) {
 				),
 			},
 			{
-				Config: correctCreds + vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "bar", 0),
+				Config: tfConfig(vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "bar", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
 						"http://example.com", "bar", vmUserID(), 1),
@@ -156,7 +156,7 @@ func TestAccVMMultipleCreate(t *testing.T) {
 		),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmMultipleConfig(vmMultipleViewName),
+				Config: tfConfig(vmMultipleConfig(vmMultipleViewName)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.first", vmIDFirst,
 						"http://example.com", "first", vmUserID(), 1),
@@ -184,7 +184,7 @@ func TestAccVMMoveTeams(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1),
+				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
 						"http://example.com", "foo", vmUserID(), 2),
@@ -193,7 +193,7 @@ func TestAccVMMoveTeams(t *testing.T) {
 				),
 			},
 			{
-				Config: correctCreds + vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0),
+				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
 						"http://example.com", "foo", vmUserID(), 1),
@@ -202,7 +202,7 @@ func TestAccVMMoveTeams(t *testing.T) {
 				),
 			},
 			{
-				Config: correctCreds + vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1),
+				Config: tfConfig(vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
 						"http://example.com", "foo", vmUserID(), 2),
@@ -385,14 +385,14 @@ func TestAccVMConsoleURLStable(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmID),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmConsoleConfig(vmID, baseURL),
+				Config: tfConfig(vmConsoleConfig(vmID, baseURL)),
 				Check: resource.ComposeTestCheckFunc(
 					// url is the configured base, with no token appended.
 					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regconsole", "url", baseURL),
 				),
 			},
 			{
-				Config: correctCreds + vmConsoleConfig(vmID, baseURL),
+				Config: tfConfig(vmConsoleConfig(vmID, baseURL)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),
@@ -422,14 +422,14 @@ func TestAccVMProxmoxStable(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmID),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", proxmoxID),
+				Config: tfConfig(vmProxmoxConfig(vmID, "https://example.com/proxmox", proxmoxID)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regproxmox", "proxmox_vm_info.0.id", proxmoxID),
 					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regproxmox", "proxmox_vm_info.0.type", "QEMU"),
 				),
 			},
 			{
-				Config: correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", proxmoxID),
+				Config: tfConfig(vmProxmoxConfig(vmID, "https://example.com/proxmox", proxmoxID)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),
@@ -455,14 +455,14 @@ func TestAccVMBasicStable(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmID),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmBasicConfig(vmID, baseURL),
+				Config: tfConfig(vmBasicConfig(vmID, baseURL)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regbasic", "url", baseURL),
 					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regbasic", "default_url", "false"),
 				),
 			},
 			{
-				Config: correctCreds + vmBasicConfig(vmID, baseURL),
+				Config: tfConfig(vmBasicConfig(vmID, baseURL)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),
@@ -489,13 +489,13 @@ func TestAccVMDefaultURLStable(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmID),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmDefaultURLConfig(vmID),
+				Config: tfConfig(vmDefaultURLConfig(vmID)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regdefault", "default_url", "true"),
 				),
 			},
 			{
-				Config: correctCreds + vmDefaultURLConfig(vmID),
+				Config: tfConfig(vmDefaultURLConfig(vmID)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),
@@ -532,7 +532,7 @@ func TestAccVMMultiTeamStable(t *testing.T) {
 		CheckDestroy:             testAccVMDestroyed(vmID),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + vmMultiTeamConfig(vmID, baseURL),
+				Config: tfConfig(vmMultiTeamConfig(vmID, baseURL)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.#", "2"),
 					// Config order is reverse(sort(...)) => descending. State must
@@ -541,7 +541,7 @@ func TestAccVMMultiTeamStable(t *testing.T) {
 				),
 			},
 			{
-				Config: correctCreds + vmMultiTeamConfig(vmID, baseURL),
+				Config: tfConfig(vmMultiTeamConfig(vmID, baseURL)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),

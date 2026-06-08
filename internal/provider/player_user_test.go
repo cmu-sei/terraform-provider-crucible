@@ -36,7 +36,7 @@ func TestAccPlayerUser(t *testing.T) {
 		CheckDestroy:             testAccUserDestroyed(userID),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + userConfig(userID, "acc-test-user", role),
+				Config: tfConfig(userConfig(userID, "acc-test-user", role)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_user.test", "user_id", userID),
 					resource.TestCheckResourceAttr("crucible_player_user.test", "name", "acc-test-user"),
@@ -45,7 +45,7 @@ func TestAccPlayerUser(t *testing.T) {
 				),
 			},
 			{
-				Config: correctCreds + userConfig(userID, "acc-test-user", roleUpdated),
+				Config: tfConfig(userConfig(userID, "acc-test-user", roleUpdated)),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_user.test", "role", roleUpdated),
 					testAccUserRemoteRole(userID, roleUpdated),
@@ -59,7 +59,7 @@ func TestAccPlayerUser(t *testing.T) {
 				// missing modifier. (role is resolved id->name on read; the prior
 				// value must carry forward.) Re-applying the same config would not
 				// catch this — role must be omitted AND a sibling must change.
-				Config: correctCreds + userConfigNoRole(userID, "acc-test-user-2"),
+				Config: tfConfig(userConfigNoRole(userID, "acc-test-user-2")),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectKnownValue("crucible_player_user.test",

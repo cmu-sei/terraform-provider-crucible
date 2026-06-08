@@ -37,7 +37,7 @@ func TestAccViewNetwork(t *testing.T) {
 		CheckDestroy:             testAccViewNetworkDestroyed("crucible_player_view_network.test"),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + viewNetworkConfig(providerType, instanceID, networkID, "acc-test-net"),
+				Config: tfConfig(viewNetworkConfig(providerType, instanceID, networkID, "acc-test-net")),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view_network.test", "provider_type", providerType),
 					resource.TestCheckResourceAttr("crucible_player_view_network.test", "name", "acc-test-net"),
@@ -47,7 +47,7 @@ func TestAccViewNetwork(t *testing.T) {
 				),
 			},
 			{
-				Config: correctCreds + viewNetworkConfig(providerType, instanceID, networkID, "acc-test-net-updated"),
+				Config: tfConfig(viewNetworkConfig(providerType, instanceID, networkID, "acc-test-net-updated")),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view_network.test", "name", "acc-test-net-updated"),
 					testAccViewNetworkRemoteMatches("crucible_player_view_network.test",
@@ -79,14 +79,14 @@ func TestAccViewNetworkMultiTeamStable(t *testing.T) {
 		CheckDestroy:             testAccViewNetworkDestroyed("crucible_player_view_network.multi"),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi"),
+				Config: tfConfig(viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi")),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view_network.multi", "team_ids.#", "2"),
 					testAccViewNetworkExists("crucible_player_view_network.multi"),
 				),
 			},
 			{
-				Config: correctCreds + viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi"),
+				Config: tfConfig(viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi")),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectEmptyPlan(),

@@ -110,8 +110,8 @@ func TestAccUpgradeView(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewDestroyed,
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+configViewEmpty,
-			correctCreds+configViewEmptyUpdated,
+			tfConfig(configViewEmpty),
+			tfConfig(configViewEmptyUpdated),
 			testAccVerifyRemoteView(emptyViewExpected),
 			testAccVerifyRemoteView(emptyViewExpectedUpdated),
 		),
@@ -125,8 +125,8 @@ func TestAccUpgradeAppTemplate(t *testing.T) {
 
 	resource.Test(t, resource.TestCase{
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+configAppTemplate,
-			correctCreds+configAppTemplateUpdated,
+			tfConfig(configAppTemplate),
+			tfConfig(configAppTemplateUpdated),
 			verifyRemoteTemplate("TestTemplate", "http://example.com",
 				"https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png",
 				"false", "false"),
@@ -208,8 +208,8 @@ func TestAccUpgradeViewWithTeams(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewDestroyed,
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+configViewTeams,
-			correctCreds+configViewTeamsUpdated,
+			tfConfig(configViewTeams),
+			tfConfig(configViewTeamsUpdated),
 			testAccVerifyRemoteView(teamViewExpected),
 			testAccVerifyRemoteView(teamViewExpectedUpdated),
 		),
@@ -236,8 +236,8 @@ func TestAccUpgradeVMConsole(t *testing.T) {
 		// the provider strips on read, so state holds the base url but the remote
 		// value differs. testAccVMRemoteMatchesState would mismatch here.
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+vmConsoleConfig(vmID, baseURL),
-			correctCreds+vmConsoleConfig(vmID, updatedURL),
+			tfConfig(vmConsoleConfig(vmID, baseURL)),
+			tfConfig(vmConsoleConfig(vmID, updatedURL)),
 			resource.TestCheckResourceAttr("crucible_player_virtual_machine.regconsole", "url", baseURL),
 			resource.TestCheckResourceAttr("crucible_player_virtual_machine.regconsole", "url", updatedURL),
 		),
@@ -261,8 +261,8 @@ func TestAccUpgradeVMProxmox(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+vmProxmoxConfig(vmID, baseURL, proxmoxID),
-			correctCreds+vmProxmoxConfig(vmID, updatedURL, proxmoxID),
+			tfConfig(vmProxmoxConfig(vmID, baseURL, proxmoxID)),
+			tfConfig(vmProxmoxConfig(vmID, updatedURL, proxmoxID)),
 			testAccVMRemoteMatchesState("crucible_player_virtual_machine.regproxmox", baseURL, "tf-acc-proxmox", vmUserID()),
 			testAccVMRemoteMatchesState("crucible_player_virtual_machine.regproxmox", updatedURL, "tf-acc-proxmox", vmUserID()),
 		),
@@ -284,8 +284,8 @@ func TestAccUpgradeVMMultiTeam(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+vmMultiTeamConfig(vmID, baseURL),
-			correctCreds+vmMultiTeamConfig(vmID, updatedURL),
+			tfConfig(vmMultiTeamConfig(vmID, baseURL)),
+			tfConfig(vmMultiTeamConfig(vmID, updatedURL)),
 			resource.ComposeTestCheckFunc(
 				resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.#", "2"),
 				testAccVMRemoteMatchesState("crucible_player_virtual_machine.regmulti", baseURL, "tf-acc-multiteam", vmUserID()),
@@ -310,8 +310,8 @@ func TestAccUpgradeUser(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccUserDestroyed(userID),
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+userConfig(userID, "acc-upgrade-user", role),
-			correctCreds+userConfig(userID, "acc-upgrade-user", roleUpdated),
+			tfConfig(userConfig(userID, "acc-upgrade-user", role)),
+			tfConfig(userConfig(userID, "acc-upgrade-user", roleUpdated)),
 			testAccUserRemoteRole(userID, role),
 			testAccUserRemoteRole(userID, roleUpdated),
 		),
@@ -331,7 +331,7 @@ func TestAccUpgradeVlan(t *testing.T) {
 	// boundary — a config change is a destroy+recreate. The no-drift guarantee is
 	// the meaningful one for this resource.
 	resource.Test(t, resource.TestCase{
-		Steps: upgradeSteps(correctCreds + vlanConfig(partitionID, vlanID)),
+		Steps: upgradeSteps(tfConfig(vlanConfig(partitionID, vlanID))),
 	})
 }
 
@@ -348,8 +348,8 @@ func TestAccUpgradeViewNetwork(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccViewNetworkDestroyed("crucible_player_view_network.multi"),
 		Steps: upgradeStepsWithUpdate(
-			correctCreds+viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi"),
-			correctCreds+viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi-updated"),
+			tfConfig(viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi")),
+			tfConfig(viewNetworkMultiTeamConfig(providerType, instanceID, networkID, "acc-test-net-multi-updated")),
 			testAccViewNetworkRemoteMatches("crucible_player_view_network.multi",
 				providerType, instanceID, networkID, "acc-test-net-multi"),
 			testAccViewNetworkRemoteMatches("crucible_player_view_network.multi",
