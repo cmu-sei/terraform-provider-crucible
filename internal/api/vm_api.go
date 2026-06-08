@@ -98,7 +98,12 @@ func UpdateVM(requestBody *structs.VMInfo, id string, m map[string]string) error
 		return err
 	}
 
-	resp, err := client.UpdateVmWithResponse(context.Background(), vmID, toUpdateForm(requestBody))
+	form, err := toUpdateForm(requestBody)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.UpdateVmWithResponse(context.Background(), vmID, form)
 	if err != nil {
 		return err
 	}
@@ -241,6 +246,11 @@ func toCreateForm(vm *structs.VMInfo) (vmclient.VmCreateForm, error) {
 		return vmclient.VmCreateForm{}, err
 	}
 
+	proxmoxInfo, err := toProxmoxInfo(vm.Proxmox)
+	if err != nil {
+		return vmclient.VmCreateForm{}, err
+	}
+
 	url := vm.URL
 	embeddable := vm.Embeddable
 	form := vmclient.VmCreateForm{
@@ -249,7 +259,7 @@ func toCreateForm(vm *structs.VMInfo) (vmclient.VmCreateForm, error) {
 		Url:                   &url,
 		Embeddable:            &embeddable,
 		ConsoleConnectionInfo: toConnInfo(vm.Connection),
-		ProxmoxVmInfo:         toProxmoxInfo(vm.Proxmox),
+		ProxmoxVmInfo:         proxmoxInfo,
 	}
 
 	if vm.ID != "" {
@@ -274,7 +284,12 @@ func toCreateForm(vm *structs.VMInfo) (vmclient.VmCreateForm, error) {
 // toUpdateForm maps a provider VMInfo onto the generated VmUpdateForm. The update
 // API ignores id/team membership (handled separately via Add/RemoveVMToTeams), so
 // those fields are absent from the form.
-func toUpdateForm(vm *structs.VMInfo) vmclient.VmUpdateForm {
+func toUpdateForm(vm *structs.VMInfo) (vmclient.VmUpdateForm, error) {
+	proxmoxInfo, err := toProxmoxInfo(vm.Proxmox)
+	if err != nil {
+		return vmclient.VmUpdateForm{}, err
+	}
+
 	url := vm.URL
 	embeddable := vm.Embeddable
 	form := vmclient.VmUpdateForm{
@@ -282,7 +297,7 @@ func toUpdateForm(vm *structs.VMInfo) vmclient.VmUpdateForm {
 		Url:                   &url,
 		Embeddable:            &embeddable,
 		ConsoleConnectionInfo: toConnInfo(vm.Connection),
-		ProxmoxVmInfo:         toProxmoxInfo(vm.Proxmox),
+		ProxmoxVmInfo:         proxmoxInfo,
 	}
 
 	if uid := userIDString(vm.UserID); uid != "" {
@@ -291,7 +306,7 @@ func toUpdateForm(vm *structs.VMInfo) vmclient.VmUpdateForm {
 		}
 	}
 
-	return form
+	return form, nil
 }
 
 // fromVM maps a generated Vm response onto the provider VMInfo. The defaultUrl
@@ -350,26 +365,25 @@ func fromConnInfo(c *vmclient.ConsoleConnectionInfo) *structs.ConsoleConnection 
 	}
 }
 
-func toProxmoxInfo(p *structs.ProxmoxInfo) *vmclient.ProxmoxVmInfo {
+func toProxmoxInfo(p *structs.ProxmoxInfo) (*vmclient.ProxmoxVmInfo, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
+	// The client represents the Proxmox id as an int32; an out-of-range value
+	// would silently truncate/wrap when narrowed, so fail loudly instead. Parsing
+	// in structs.ProxmoxInfoFromMap already rejects out-of-range ids, so this is a
+	// defensive guard at the conversion sink.
+	if p.Id < math.MinInt32 || p.Id > math.MaxInt32 {
+		return nil, fmt.Errorf("proxmox id %d is out of int32 range", p.Id)
+	}
+	id := int32(p.Id)
 	node := p.Node
 	t := vmclient.ProxmoxVmType(p.Type)
-	info := &vmclient.ProxmoxVmInfo{
+	return &vmclient.ProxmoxVmInfo{
+		Id:   &id,
 		Node: &node,
 		Type: &t,
-	}
-	// The client represents the Proxmox id as an int32. Only set it when p.Id is
-	// in range; an out-of-range value would silently truncate/wrap, so leave the
-	// field unset (omitempty) instead of transmitting a corrupt id. Parsing in
-	// structs.ProxmoxInfoFromMap already rejects out-of-range ids, so this is a
-	// defensive guard at the conversion sink.
-	if p.Id >= math.MinInt32 && p.Id <= math.MaxInt32 {
-		id := int32(p.Id)
-		info.Id = &id
-	}
-	return info
+	}, nil
 }
 
 func fromProxmoxInfo(p *vmclient.ProxmoxVmInfo) *structs.ProxmoxInfo {
