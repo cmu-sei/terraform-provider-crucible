@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,13 +18,36 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
-// Fixed VM ids used by the testConfigs.json-backed VM tests. Shared so each
-// test's CheckDestroy, pre-run sweep, and cleanup all reference the same id.
+// Fixed VM ids used by the VM tests. Shared so each test's CheckDestroy, pre-run
+// sweep, and cleanup all reference the same id.
 const (
-	vmIDNormal = "6a7ec409-d275-4b31-94d3-a51cb61d2519" // configVMNormal / Updated / MultiTeams
-	vmIDFirst  = "1d0b5b53-e034-492d-95c6-714379a4f51e" // configVMFirst
-	vmIDSecond = "3faebb23-d896-410b-9fcb-a17d9d37427d" // configVMSecond
+	vmIDNormal    = "6a7ec409-d275-4b31-94d3-a51cb61d2519" // basic / update / move-teams
+	vmIDFirst     = "1d0b5b53-e034-492d-95c6-714379a4f51e" // multiple-create #1
+	vmIDSecond    = "3faebb23-d896-410b-9fcb-a17d9d37427d" // multiple-create #2
+	vmIDBadUserID = "33605140-f28f-4722-b161-8540e97e6bab" // bad-user-id fail case
+	vmDummyTeamID = "00000000-0000-4000-8000-000000000000" // a syntactically valid (but unused) team id for the fail case
+	vmTestViewRes = "fix"                                  // local resource name of each test's inline view fixture
 )
+
+// Each VM test provisions its own crucible_player_view (named below) to supply
+// real, freshly-created team ids — the tests no longer depend on any pre-seeded
+// team GUIDs. Names are distinct per scenario so a sweep/cleanup of one can't
+// disturb another.
+const (
+	vmNormalViewName     = "tf-acc-vm-normal"
+	vmMultipleViewName   = "tf-acc-vm-multiple"
+	vmMoveViewName       = "tf-acc-vm-move"
+	vmBasicViewName      = "tf-acc-vm-basic"
+	vmConsoleViewName    = "tf-acc-vm-console"
+	vmProxmoxViewName    = "tf-acc-vm-proxmox"
+	vmDefaultURLViewName = "tf-acc-vm-default-url"
+	vmMultiTeamViewName  = "tf-acc-vm-multiteam"
+)
+
+// vmUserID is the user_id stamped on test VMs. Player's VM API stores user_id
+// free-form (no Keycloak FK), so a fixed, overridable value round-trips cleanly
+// and keeps ImportStateVerify deterministic. See TF_TEST_VM_USER_ID.
+func vmUserID() string { return testEnv("TF_TEST_VM_USER_ID") }
 
 // Test case for a normal creation/deployment of a VM. VM fields are set
 // properly, as are API credentials.
@@ -32,18 +56,22 @@ const (
 func TestAccVMBasicSuccessful(t *testing.T) {
 	sweepVM(t, vmIDNormal)
 	registerVMCleanup(t, vmIDNormal)
+	sweepViewByName(t, vmNormalViewName)
+	registerViewCleanupByName(t, vmNormalViewName)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configVMNormal,
+				Config: correctCreds + vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVMVerifyLocal("crucible_player_virtual_machine.test", "6a7ec409-d275-4b31-94d3-a51cb61d2519",
-						"http://example.com", "foo", "8694c78c-1c49-421b-8ed8-689b46834878",
-						[]string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
-					testAccVMRemoteEquals("6a7ec409-d275-4b31-94d3-a51cb61d2519", "http://example.com", "foo",
-						"8694c78c-1c49-421b-8ed8-689b46834878", []string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
+					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
+						"http://example.com", "foo", vmUserID(), 1),
+					resource.TestCheckResourceAttrPair(
+						"crucible_player_virtual_machine.test", "team_ids.0",
+						"crucible_player_view.fix", "team.0.team_id"),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
+						"http://example.com", "foo", vmUserID()),
 				),
 			},
 			{
@@ -65,12 +93,15 @@ func TestAccVMBasicFail(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configVMIncorrectUserID,
+				Config: correctCreds + vmBadUserIDConfig(),
 				// The config supplies a malformed user_id ("_"). The typed VM
 				// client (internal/vmclient) parses ids into UUIDs before issuing
 				// the request, so an invalid value is now rejected client-side
 				// ("invalid UUID...") rather than by the API returning 400. Match
 				// either so the test passes regardless of which layer rejects it.
+				// No view fixture is needed: the create fails at the client-side
+				// user_id parse before any team API call, so a syntactically-valid
+				// dummy team id suffices.
 				ExpectError: regexp.MustCompile("(?i)invalid UUID|status code 400"),
 			},
 		},
@@ -81,28 +112,28 @@ func TestAccVMBasicFail(t *testing.T) {
 func TestAccVMUpdate(t *testing.T) {
 	sweepVM(t, vmIDNormal)
 	registerVMCleanup(t, vmIDNormal)
+	sweepViewByName(t, vmNormalViewName)
+	registerViewCleanupByName(t, vmNormalViewName)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configVMNormal,
+				Config: correctCreds + vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "foo", 0),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVMVerifyLocal("crucible_player_virtual_machine.test", "6a7ec409-d275-4b31-94d3-a51cb61d2519",
-						"http://example.com", "foo", "8694c78c-1c49-421b-8ed8-689b46834878",
-						[]string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
-					testAccVMRemoteEquals("6a7ec409-d275-4b31-94d3-a51cb61d2519", "http://example.com", "foo",
-						"8694c78c-1c49-421b-8ed8-689b46834878", []string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
+					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
+						"http://example.com", "foo", vmUserID(), 1),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
+						"http://example.com", "foo", vmUserID()),
 				),
 			},
 			{
-				Config: correctCreds + configVMNormalUpdated,
+				Config: correctCreds + vmViewVMConfig(vmNormalViewName, 1, "test", vmIDNormal, "http://example.com", "bar", 0),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVMVerifyLocal("crucible_player_virtual_machine.test", "6a7ec409-d275-4b31-94d3-a51cb61d2519",
-						"http://example.com", "bar", "8694c78c-1c49-421b-8ed8-689b46834878",
-						[]string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
-					testAccVMRemoteEquals("6a7ec409-d275-4b31-94d3-a51cb61d2519", "http://example.com", "bar",
-						"8694c78c-1c49-421b-8ed8-689b46834878", []string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
+					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
+						"http://example.com", "bar", vmUserID(), 1),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
+						"http://example.com", "bar", vmUserID()),
 				),
 			},
 		},
@@ -115,6 +146,8 @@ func TestAccVMMultipleCreate(t *testing.T) {
 	sweepVM(t, vmIDSecond)
 	registerVMCleanup(t, vmIDFirst)
 	registerVMCleanup(t, vmIDSecond)
+	sweepViewByName(t, vmMultipleViewName)
+	registerViewCleanupByName(t, vmMultipleViewName)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy: resource.ComposeTestCheckFunc(
@@ -123,48 +156,59 @@ func TestAccVMMultipleCreate(t *testing.T) {
 		),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configVMFirst + configVMSecond,
+				Config: correctCreds + vmMultipleConfig(vmMultipleViewName),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVMVerifyLocal("crucible_player_virtual_machine.first", "1d0b5b53-e034-492d-95c6-714379a4f51e",
-						"http://example.com", "first", "8694c78c-1c49-421b-8ed8-689b46834878",
-						[]string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
-					testAccVMRemoteEquals("1d0b5b53-e034-492d-95c6-714379a4f51e", "http://example.com", "first",
-						"8694c78c-1c49-421b-8ed8-689b46834878", []string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
-					testAccVMVerifyLocal("crucible_player_virtual_machine.second", "3faebb23-d896-410b-9fcb-a17d9d37427d",
-						"http://example.com", "second", "8694c78c-1c49-421b-8ed8-689b46834878",
-						[]string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
-					testAccVMRemoteEquals("3faebb23-d896-410b-9fcb-a17d9d37427d", "http://example.com", "second",
-						"8694c78c-1c49-421b-8ed8-689b46834878", []string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
+					testAccVMVerifyLocal("crucible_player_virtual_machine.first", vmIDFirst,
+						"http://example.com", "first", vmUserID(), 1),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.first",
+						"http://example.com", "first", vmUserID()),
+					testAccVMVerifyLocal("crucible_player_virtual_machine.second", vmIDSecond,
+						"http://example.com", "second", vmUserID(), 1),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.second",
+						"http://example.com", "second", vmUserID()),
 				),
 			},
 		},
 	})
 }
 
-// Test case for moving a VM between teams.
+// Test case for moving a VM between teams. The inline view holds two teams the
+// whole time; only the VM's membership toggles between one and both.
 func TestAccVMMoveTeams(t *testing.T) {
 	sweepVM(t, vmIDNormal)
 	registerVMCleanup(t, vmIDNormal)
+	sweepViewByName(t, vmMoveViewName)
+	registerViewCleanupByName(t, vmMoveViewName)
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             testAccVMDestroyed(vmIDNormal),
 		Steps: []resource.TestStep{
 			{
-				Config: correctCreds + configVMMultiTeams,
-				Check: testAccVMRemoteEquals("6a7ec409-d275-4b31-94d3-a51cb61d2519", "http://example.com", "foo",
-					"8694c78c-1c49-421b-8ed8-689b46834878",
-					[]string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761", "8efdcbd3-daa5-4cb4-b62b-338fe7bf3351"}),
+				Config: correctCreds + vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1),
+				Check: resource.ComposeTestCheckFunc(
+					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
+						"http://example.com", "foo", vmUserID(), 2),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
+						"http://example.com", "foo", vmUserID()),
+				),
 			},
 			{
-				Config: correctCreds + configVMNormal,
-				Check: testAccVMRemoteEquals("6a7ec409-d275-4b31-94d3-a51cb61d2519", "http://example.com", "foo",
-					"8694c78c-1c49-421b-8ed8-689b46834878", []string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"}),
+				Config: correctCreds + vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0),
+				Check: resource.ComposeTestCheckFunc(
+					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
+						"http://example.com", "foo", vmUserID(), 1),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
+						"http://example.com", "foo", vmUserID()),
+				),
 			},
 			{
-				Config: correctCreds + configVMMultiTeams,
-				Check: testAccVMRemoteEquals("6a7ec409-d275-4b31-94d3-a51cb61d2519", "http://example.com", "foo",
-					"8694c78c-1c49-421b-8ed8-689b46834878",
-					[]string{"c0a1ebb6-f549-43fb-8d79-63fe1c3dd761", "8efdcbd3-daa5-4cb4-b62b-338fe7bf3351"}),
+				Config: correctCreds + vmViewVMConfig(vmMoveViewName, 2, "test", vmIDNormal, "http://example.com", "foo", 0, 1),
+				Check: resource.ComposeTestCheckFunc(
+					testAccVMVerifyLocal("crucible_player_virtual_machine.test", vmIDNormal,
+						"http://example.com", "foo", vmUserID(), 2),
+					testAccVMRemoteMatchesState("crucible_player_virtual_machine.test",
+						"http://example.com", "foo", vmUserID()),
+				),
 			},
 		},
 	})
@@ -172,25 +216,105 @@ func TestAccVMMoveTeams(t *testing.T) {
 
 // -------------------- helper functions --------------------
 
-// testAccVMVerifyLocal verifies the Terraform state of a VM resource.
-func testAccVMVerifyLocal(res, id, url, name, userID string, teamIDs []string) resource.TestCheckFunc {
-	checks := []resource.TestCheckFunc{
+// vmTeamViewFixture emits a crucible_player_view (local resource name vmTestViewRes)
+// named viewName with the requested number of teams. create_admin_team must be
+// true: the VM is added to the view's teams using the provider's own credentials,
+// and the VM API requires the caller to be a view admin (otherwise 403). Reference
+// a created team's id as crucible_player_view.fix.team[i].team_id.
+func vmTeamViewFixture(viewName string, teams int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, `resource "crucible_player_view" %q {
+	name              = %q
+	description       = "view fixture for VM acceptance tests"
+	status            = "Active"
+	create_admin_team = true
+`, vmTestViewRes, viewName)
+	for i := 0; i < teams; i++ {
+		fmt.Fprintf(&b, "\n\tteam {\n\t\tname = \"vm-team-%d\"\n\t}\n", i)
+	}
+	b.WriteString("}\n\n")
+	return b.String()
+}
+
+// vmViewVMConfig builds a view fixture (teamCount teams) plus a single VM that is
+// a member of the teams at the given indexes (referencing their computed
+// team_id). Used by the basic/update/move tests.
+func vmViewVMConfig(viewName string, teamCount int, vmRes, vmID, url, name string, teamIdxs ...int) string {
+	exprs := make([]string, len(teamIdxs))
+	for i, idx := range teamIdxs {
+		exprs[i] = fmt.Sprintf("crucible_player_view.%s.team[%d].team_id", vmTestViewRes, idx)
+	}
+	return vmTeamViewFixture(viewName, teamCount) + fmt.Sprintf(`resource "crucible_player_virtual_machine" %q {
+	vm_id    = "%s"
+	url      = "%s"
+	name     = "%s"
+	user_id  = "%s"
+	team_ids = [%s]
+}
+`, vmRes, vmID, url, name, vmUserID(), strings.Join(exprs, ", "))
+}
+
+// vmMultipleConfig builds one view (single team) plus two VMs both in that team,
+// for the multiple-create test.
+func vmMultipleConfig(viewName string) string {
+	teamExpr := fmt.Sprintf("crucible_player_view.%s.team[0].team_id", vmTestViewRes)
+	vm := func(res, id, name string) string {
+		return fmt.Sprintf(`resource "crucible_player_virtual_machine" %q {
+	vm_id    = "%s"
+	url      = "http://example.com"
+	name     = "%s"
+	user_id  = "%s"
+	team_ids = [%s]
+}
+`, res, id, name, vmUserID(), teamExpr)
+	}
+	return vmTeamViewFixture(viewName, 1) + vm("first", vmIDFirst, "first") + vm("second", vmIDSecond, "second")
+}
+
+// vmBadUserIDConfig builds a VM with a malformed user_id and no view fixture. The
+// create fails at the client-side user_id UUID parse before any team API call, so
+// a syntactically-valid dummy team id is enough.
+func vmBadUserIDConfig() string {
+	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "bad" {
+	vm_id    = "%s"
+	url      = "http://example.com"
+	name     = "foo"
+	user_id  = "_"
+	team_ids = ["%s"]
+}
+`, vmIDBadUserID, vmDummyTeamID)
+}
+
+// testAccVMVerifyLocal verifies the Terraform state of a VM resource (the
+// scalar fields against expected constants, and the team_ids count). The team ids
+// themselves are computed (the fixture's freshly-created teams), so they are
+// asserted by membership count here and by remote/round-trip checks elsewhere.
+func testAccVMVerifyLocal(res, id, url, name, userID string, teamCount int) resource.TestCheckFunc {
+	return resource.ComposeTestCheckFunc(
 		resource.TestCheckResourceAttr(res, "vm_id", id),
 		resource.TestCheckResourceAttr(res, "name", name),
 		resource.TestCheckResourceAttr(res, "url", url),
 		resource.TestCheckResourceAttr(res, "user_id", userID),
-		resource.TestCheckResourceAttr(res, "team_ids.#", fmt.Sprintf("%d", len(teamIDs))),
-	}
-	for _, tid := range teamIDs {
-		checks = append(checks, resource.TestCheckTypeSetElemAttr(res, "team_ids.*", tid))
-	}
-	return resource.ComposeTestCheckFunc(checks...)
+		resource.TestCheckResourceAttr(res, "team_ids.#", strconv.Itoa(teamCount)),
+	)
 }
 
-// testAccVMRemoteEquals verifies the VM with the given ID exists in the API and
-// matches the expected fields.
-func testAccVMRemoteEquals(id, url, name, userID string, teamIDs []string) resource.TestCheckFunc {
-	return func(_ *terraform.State) error {
+// testAccVMRemoteMatchesState verifies the VM in the API matches the VM's own
+// Terraform state: the scalar fields equal the expected constants, and the team
+// membership reported by the API equals exactly the team_ids the provider stored
+// in state. Reading team_ids from state (rather than a fixed list) decouples the
+// check from the computed fixture ids and naturally covers the move-teams subset
+// case.
+func testAccVMRemoteMatchesState(res, wantURL, wantName, wantUserID string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[res]
+		if !ok {
+			return fmt.Errorf("resource %s not found in state", res)
+		}
+		id := rs.Primary.Attributes["vm_id"]
+		if id == "" {
+			id = rs.Primary.ID
+		}
 		info, err := api.GetVMInfo(id, getMap())
 		if err != nil {
 			return err
@@ -198,18 +322,22 @@ func testAccVMRemoteEquals(id, url, name, userID string, teamIDs []string) resou
 		if info.ID != id {
 			return fmt.Errorf("expected id %s, got %s", id, info.ID)
 		}
-		if info.Name != name {
-			return fmt.Errorf("expected name %s, got %s", name, info.Name)
+		if info.Name != wantName {
+			return fmt.Errorf("expected name %s, got %s", wantName, info.Name)
 		}
-		if info.URL != url {
-			return fmt.Errorf("expected url %s, got %s", url, info.URL)
+		if info.URL != wantURL {
+			return fmt.Errorf("expected url %s, got %s", wantURL, info.URL)
 		}
-		if uid, ok := info.UserID.(string); !ok || uid != userID {
-			return fmt.Errorf("expected user_id %s, got %v", userID, info.UserID)
+		if uid, ok := info.UserID.(string); !ok || uid != wantUserID {
+			return fmt.Errorf("expected user_id %s, got %v", wantUserID, info.UserID)
 		}
 
+		n, _ := strconv.Atoi(rs.Primary.Attributes["team_ids.#"])
+		want := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			want = append(want, rs.Primary.Attributes[fmt.Sprintf("team_ids.%d", i)])
+		}
 		got := append([]string{}, info.TeamIDs...)
-		want := append([]string{}, teamIDs...)
 		sort.Strings(got)
 		sort.Strings(want)
 		if strings.Join(got, ",") != strings.Join(want, ",") {
@@ -233,15 +361,10 @@ func testAccVMDestroyed(id string) resource.TestCheckFunc {
 	}
 }
 
-// vmRegressionTeamID is the team id the existing VM acceptance tests use; the
-// per-shape plan-stability tests below reuse it.
-const vmRegressionTeamID = "c0a1ebb6-f549-43fb-8d79-63fe1c3dd761"
-
-// The plan-stability tests below build their HCL inline (rather than via the
-// configs/testConfigs.json + getVMResource path) because that helper does not
-// render the console_connection_info / proxmox_vm_info nested blocks, and these
-// tests need them. They follow the viewOneUserConfig precedent in
-// player_view_server_test.go.
+// The plan-stability tests below build their HCL inline, following the
+// viewOneUserConfig precedent in player_view_server_test.go. Each prepends an
+// inline crucible_player_view to supply a real team id, like
+// viewNetworkMultiTeamConfig does for view networks.
 
 // TestAccVMConsoleURLStable is the regression test for the reported bug: a VM
 // with console_connection_info and a base url. The VM API appends a Guacamole
@@ -254,6 +377,8 @@ func TestAccVMConsoleURLStable(t *testing.T) {
 	const baseURL = "https://example.com/console"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
+	sweepViewByName(t, vmConsoleViewName)
+	registerViewCleanupByName(t, vmConsoleViewName)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -289,6 +414,8 @@ func TestAccVMProxmoxStable(t *testing.T) {
 	const proxmoxID = "990002"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
+	sweepViewByName(t, vmProxmoxViewName)
+	registerViewCleanupByName(t, vmProxmoxViewName)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -320,6 +447,8 @@ func TestAccVMBasicStable(t *testing.T) {
 	const baseURL = "https://example.com/basic"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
+	sweepViewByName(t, vmBasicViewName)
+	registerViewCleanupByName(t, vmBasicViewName)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -352,6 +481,8 @@ func TestAccVMDefaultURLStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000004"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
+	sweepViewByName(t, vmDefaultURLViewName)
+	registerViewCleanupByName(t, vmDefaultURLViewName)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -375,23 +506,26 @@ func TestAccVMDefaultURLStable(t *testing.T) {
 	})
 }
 
-// secondVMRegressionTeamID is a second real team id (the one TestAccVMMoveTeams
-// uses) for multi-team coverage. It sorts BEFORE vmRegressionTeamID
-// ("8efd..." < "c0a1..."), so listing them in the opposite order in config makes
-// the test fail if read() ever reorders team_ids (e.g. by sorting) relative to
-// config — the bug behind the reported "inconsistent result ... team_ids[n]".
-const secondVMRegressionTeamID = "8efdcbd3-daa5-4cb4-b62b-338fe7bf3351"
-
 // TestAccVMMultiTeamStable guards multi-team ordering: a VM in two teams whose
 // configured order is the reverse of their sorted order. read() must carry the
 // configured order into state, not a sorted one, or apply fails with
 // "inconsistent result after apply" on team_ids. A single-team test cannot catch
 // this (sorting a one-element list is a no-op).
+//
+// The two team ids are computed (freshly created in the inline view), so we can't
+// hardcode their relative order. Instead the config assigns them with
+// reverse(sort([...])) — guaranteeing the VM's configured team_ids are in
+// DESCENDING order regardless of the random ids (the same trick
+// viewNetworkMultiTeamConfig uses). The check then asserts state preserves that
+// descending order: a stray ascending sort in read() would flip team_ids.0 and
+// team_ids.1 and fail. Step 2's empty plan confirms the order is stable.
 func TestAccVMMultiTeamStable(t *testing.T) {
 	const vmID = "b1f3c2a4-1111-4aaa-9bbb-000000000005"
 	const baseURL = "https://example.com/multiteam"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
+	sweepViewByName(t, vmMultiTeamViewName)
+	registerViewCleanupByName(t, vmMultiTeamViewName)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -400,10 +534,10 @@ func TestAccVMMultiTeamStable(t *testing.T) {
 			{
 				Config: correctCreds + vmMultiTeamConfig(vmID, baseURL),
 				Check: resource.ComposeTestCheckFunc(
-					// Config order is [vmRegressionTeamID, secondVMRegressionTeamID]
-					// (the reverse of sorted order); state must preserve it.
-					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.0", vmRegressionTeamID),
-					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.1", secondVMRegressionTeamID),
+					resource.TestCheckResourceAttr("crucible_player_virtual_machine.regmulti", "team_ids.#", "2"),
+					// Config order is reverse(sort(...)) => descending. State must
+					// preserve it; a re-sort in read() would make it ascending.
+					testAccVMTeamIDsDescending("crucible_player_virtual_machine.regmulti"),
 				),
 			},
 			{
@@ -418,24 +552,48 @@ func TestAccVMMultiTeamStable(t *testing.T) {
 	})
 }
 
+// testAccVMTeamIDsDescending asserts the VM's first two team_ids are in
+// descending order, proving read() did not re-sort them ascending.
+func testAccVMTeamIDsDescending(res string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[res]
+		if !ok {
+			return fmt.Errorf("resource %s not found in state", res)
+		}
+		a := rs.Primary.Attributes["team_ids.0"]
+		b := rs.Primary.Attributes["team_ids.1"]
+		if a <= b {
+			return fmt.Errorf("expected team_ids in descending order, got [%s, %s]", a, b)
+		}
+		return nil
+	}
+}
+
 // --- inline config builders for the per-shape plan-stability tests ---
+// Each prepends a crucible_player_view (resource name vmTestViewRes) so the VM
+// has a real team to join. These builders are also used by upgrade_test.go.
 
 func vmMultiTeamConfig(vmID, url string) string {
-	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regmulti" {
+	return vmTeamViewFixture(vmMultiTeamViewName, 2) + fmt.Sprintf(`resource "crucible_player_virtual_machine" "regmulti" {
 	vm_id    = "%s"
 	url      = "%s"
 	name     = "tf-acc-multiteam"
-	team_ids = ["%s", "%s"]
+	user_id  = "%s"
+	team_ids = reverse(sort([
+		crucible_player_view.%s.team[0].team_id,
+		crucible_player_view.%s.team[1].team_id,
+	]))
 }
-`, vmID, url, vmRegressionTeamID, secondVMRegressionTeamID)
+`, vmID, url, vmUserID(), vmTestViewRes, vmTestViewRes)
 }
 
 func vmConsoleConfig(vmID, url string) string {
-	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regconsole" {
+	return vmTeamViewFixture(vmConsoleViewName, 1) + fmt.Sprintf(`resource "crucible_player_virtual_machine" "regconsole" {
 	vm_id    = "%s"
 	url      = "%s"
 	name     = "tf-acc-console"
-	team_ids = ["%s"]
+	user_id  = "%s"
+	team_ids = [crucible_player_view.%s.team[0].team_id]
 
 	console_connection_info {
 		hostname = "10.0.0.10"
@@ -445,15 +603,16 @@ func vmConsoleConfig(vmID, url string) string {
 		password = "changeme"
 	}
 }
-`, vmID, url, vmRegressionTeamID)
+`, vmID, url, vmUserID(), vmTestViewRes)
 }
 
 func vmProxmoxConfig(vmID, url, proxmoxID string) string {
-	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regproxmox" {
+	return vmTeamViewFixture(vmProxmoxViewName, 1) + fmt.Sprintf(`resource "crucible_player_virtual_machine" "regproxmox" {
 	vm_id    = "%s"
 	url      = "%s"
 	name     = "tf-acc-proxmox"
-	team_ids = ["%s"]
+	user_id  = "%s"
+	team_ids = [crucible_player_view.%s.team[0].team_id]
 
 	proxmox_vm_info {
 		id   = "%s"
@@ -461,24 +620,26 @@ func vmProxmoxConfig(vmID, url, proxmoxID string) string {
 		type = "QEMU"
 	}
 }
-`, vmID, url, vmRegressionTeamID, proxmoxID)
+`, vmID, url, vmUserID(), vmTestViewRes, proxmoxID)
 }
 
 func vmBasicConfig(vmID, url string) string {
-	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regbasic" {
+	return vmTeamViewFixture(vmBasicViewName, 1) + fmt.Sprintf(`resource "crucible_player_virtual_machine" "regbasic" {
 	vm_id    = "%s"
 	url      = "%s"
 	name     = "tf-acc-basic"
-	team_ids = ["%s"]
+	user_id  = "%s"
+	team_ids = [crucible_player_view.%s.team[0].team_id]
 }
-`, vmID, url, vmRegressionTeamID)
+`, vmID, url, vmUserID(), vmTestViewRes)
 }
 
 func vmDefaultURLConfig(vmID string) string {
-	return fmt.Sprintf(`resource "crucible_player_virtual_machine" "regdefault" {
+	return vmTeamViewFixture(vmDefaultURLViewName, 1) + fmt.Sprintf(`resource "crucible_player_virtual_machine" "regdefault" {
 	vm_id    = "%s"
 	name     = "tf-acc-default-url"
-	team_ids = ["%s"]
+	user_id  = "%s"
+	team_ids = [crucible_player_view.%s.team[0].team_id]
 
 	console_connection_info {
 		hostname = "10.0.0.20"
@@ -488,5 +649,5 @@ func vmDefaultURLConfig(vmID string) string {
 		password = "changeme"
 	}
 }
-`, vmID, vmRegressionTeamID)
+`, vmID, vmUserID(), vmTestViewRes)
 }

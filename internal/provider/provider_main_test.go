@@ -35,15 +35,9 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 var correctCreds string
 var incorrectCreds string
 
-// Config strings that map to a VM resource
-var configVMNormal string
-var configVMFirst string
-var configVMSecond string
-var configVMIncorrectUserID string
-var configVMNormalUpdated string
-var configVMFirstUpdated string
-var configVMSecondUpdated string
-var configVMMultiTeams string
+// VM resource configs are built inline per-test (see
+// player_virtual_machine_server_test.go), each provisioning its own
+// crucible_player_view to supply real team ids, so there are no VM config globals.
 
 // Config strings for views
 var configViewEmpty string
@@ -92,15 +86,6 @@ func init() {
 
 	correctCreds = getCreds()
 	incorrectCreds = getIncorrectCreds()
-
-	configVMNormal = getVMResource("configVMNormal", &asMap)
-	configVMFirst = getVMResource("configVMFirst", &asMap)
-	configVMSecond = getVMResource("configVMSecond", &asMap)
-	configVMIncorrectUserID = getVMResource("configVMIncorrectUserID", &asMap)
-	configVMNormalUpdated = getVMResource("configVMNormalUpdated", &asMap)
-	configVMFirstUpdated = getVMResource("configVMFirstUpdated", &asMap)
-	configVMSecondUpdated = getVMResource("configVMSecondUpdated", &asMap)
-	configVMMultiTeams = getVMResource("configVMMultiTeams", &asMap)
 
 	configViewEmpty = getViewResource("configViewEmpty", &asMap)
 	configViewEmptyUpdated = getViewResource("configViewEmptyUpdated", &asMap)
@@ -510,33 +495,6 @@ func getIncorrectCreds() string {
 	return ret
 }
 
-func getVMResource(key string, asMap *map[string]interface{}) string {
-	subMap := (*asMap)[key].(map[string]interface{})
-	if subMap == nil {
-		panic("Key not found in file")
-	}
-
-	teamIDs := subMap["team_ids"].([]interface{})
-	teamIDsStrSlice := util.ToStringSlice(&teamIDs)
-
-	for i, team := range *teamIDsStrSlice {
-		(*teamIDsStrSlice)[i] = "\"" + team + "\""
-	}
-
-	ret := fmt.Sprintf(`resource "%s" "%s" {
-		vm_id = "%s"
-		url = "%s"
-		name = "%s"
-		user_id = "%s"
-		team_ids = [%v]
-	}
-	
-	`, subMap["provider_name"].(string), subMap["resourceName"].(string), subMap["vm_id"].(string), subMap["url"].(string),
-		subMap["name"].(string), subMap["user_id"].(string), strings.Join(*teamIDsStrSlice, ","))
-
-	return ret
-}
-
 func getViewResource(key string, file *map[string]interface{}) string {
 	resource := (*file)[key].(map[string]interface{})
 	if resource == nil {
@@ -720,6 +678,11 @@ var testEnvDefaults = map[string]string{
 	// NOT reuse the seeded admin GUID here — creating it 500s because it already
 	// exists, and destroying it would remove the seeded admin.)
 	"TF_TEST_USER_ID": "f1a9b2c3-0000-4d5e-8f60-acc7e57e0001",
+	// The user_id stamped on the VM acceptance tests' VMs. Player's VM API stores
+	// user_id free-form (no FK validation against Keycloak), so any fixed UUID
+	// round-trips; a stable value keeps ImportStateVerify deterministic. Override
+	// only to target a real user.
+	"TF_TEST_VM_USER_ID": "8694c78c-1c49-421b-8ed8-689b46834878",
 }
 
 // testEnv returns the exported environment variable when set, otherwise the

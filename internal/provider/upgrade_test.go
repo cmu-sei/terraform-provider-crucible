@@ -194,6 +194,9 @@ func TestAccUpgradeVMConsole(t *testing.T) {
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000001"
 	registerVMCleanup(t, vmID)
 	sweepVM(t, vmID)
+	// vmConsoleConfig emits an inline view fixture (for a real team id); clean it up.
+	sweepViewByName(t, vmConsoleViewName)
+	registerViewCleanupByName(t, vmConsoleViewName)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmConsoleConfig(vmID, "https://example.com/console")),
@@ -209,6 +212,8 @@ func TestAccUpgradeVMProxmox(t *testing.T) {
 	// with other fixtures / test/main.tf.
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
+	sweepViewByName(t, vmProxmoxViewName)
+	registerViewCleanupByName(t, vmProxmoxViewName)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmProxmoxConfig(vmID, "https://example.com/proxmox", "990010")),
@@ -223,6 +228,8 @@ func TestAccUpgradeVMMultiTeam(t *testing.T) {
 	const vmID = "c2e4d3a5-2222-4bbb-9ccc-000000000003"
 	sweepVM(t, vmID)
 	registerVMCleanup(t, vmID)
+	sweepViewByName(t, vmMultiTeamViewName)
+	registerViewCleanupByName(t, vmMultiTeamViewName)
 	resource.Test(t, resource.TestCase{
 		CheckDestroy: testAccVMDestroyed(vmID),
 		Steps:        upgradeSteps(correctCreds + vmMultiTeamConfig(vmID, "https://example.com/multiteam")),
