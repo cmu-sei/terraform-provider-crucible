@@ -99,38 +99,18 @@ func (d *applicationTemplateDataSource) Read(ctx context.Context, req datasource
 		return
 	}
 
-	template, err := api.AppTemplateFindByName(config.Name.ValueString(), config.CaseInsensitive.ValueBool(), d.cfg)
+	id, template, err := api.AppTemplateFindByName(config.Name.ValueString(), config.CaseInsensitive.ValueBool(), d.cfg)
 	if err != nil {
 		resp.Diagnostics.AddError("Error looking up application template", err.Error())
 		return
 	}
 
-	if template.Id == nil {
-		resp.Diagnostics.AddError("Error looking up application template", "player API returned a template with no id")
-		return
-	}
-	config.ID = types.StringValue(template.Id.String())
-	config.Name = types.StringValue(strDeref(template.Name))
-	config.URL = types.StringValue(strDeref(template.Url))
-	config.Icon = types.StringValue(strDeref(template.Icon))
-	config.Embeddable = types.BoolValue(boolDeref(template.Embeddable))
-	config.LoadInBackground = types.BoolValue(boolDeref(template.LoadInBackground))
+	config.ID = types.StringValue(id)
+	config.Name = types.StringValue(template.Name)
+	config.URL = types.StringValue(template.URL)
+	config.Icon = types.StringValue(template.Icon)
+	config.Embeddable = types.BoolValue(template.Embeddable)
+	config.LoadInBackground = types.BoolValue(template.LoadInBackground)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
-}
-
-// strDeref returns the pointed-to string, or "" if the pointer is nil.
-func strDeref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-// boolDeref returns the pointed-to bool, or false if the pointer is nil.
-func boolDeref(b *bool) bool {
-	if b == nil {
-		return false
-	}
-	return *b
 }

@@ -162,32 +162,39 @@ func AppTemplateExists(id string, m map[string]string) (bool, error) {
 	return resp.JSON200 != nil, nil
 }
 
-// AppTemplateFindByName returns the application template whose name matches the
-// given name. The Player API has no get-by-name endpoint, so this lists all
-// templates and filters client-side. Player does not enforce unique template
-// names, so this errors if more than one matches; it also errors if none match.
-// When caseInsensitive is true, matching uses strings.EqualFold.
+// AppTemplateFindByName returns the id and provider-facing model of the
+// application template whose name matches the given name. The Player API has no
+// get-by-name endpoint, so this lists all templates and filters client-side.
+// Player does not enforce unique template names, so this errors if more than one
+// matches; it also errors if none match. When caseInsensitive is true, matching
+// uses strings.EqualFold.
 //
-// It returns the generated client struct (not structs.AppTemplate) so callers
-// can read the template's id, which structs.AppTemplate does not carry.
-func AppTemplateFindByName(name string, caseInsensitive bool, m map[string]string) (*playerclient.ApplicationTemplate, error) {
+// The id is returned separately because structs.AppTemplate does not carry it.
+func AppTemplateFindByName(name string, caseInsensitive bool, m map[string]string) (string, *structs.AppTemplate, error) {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	resp, err := client.GetApplicationTemplatesWithResponse(context.Background())
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("player API returned with status code %d when listing templates", resp.StatusCode())
+		return "", nil, fmt.Errorf("player API returned with status code %d when listing templates", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("player API returned status 200 with no body when listing templates")
+		return "", nil, fmt.Errorf("player API returned status 200 with no body when listing templates")
 	}
 
-	return matchAppTemplateByName(*resp.JSON200, name, caseInsensitive)
+	match, err := matchAppTemplateByName(*resp.JSON200, name, caseInsensitive)
+	if err != nil {
+		return "", nil, err
+	}
+	if match.Id == nil {
+		return "", nil, fmt.Errorf("player API returned a template with no id")
+	}
+	return match.Id.String(), fromAppTemplate(match), nil
 }
 
 // matchAppTemplateByName returns the single template whose name matches; it
