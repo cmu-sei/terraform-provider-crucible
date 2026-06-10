@@ -173,8 +173,9 @@ func (p *crucibleProvider) Resources(_ context.Context) []func() resource.Resour
 	}
 }
 
-// DataSources returns the data source types implemented by the provider. The
-// provider currently exposes no data sources.
+// DataSources returns the data source types implemented by the provider.
 func (p *crucibleProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewApplicationTemplateDataSource,
+	}
 }
