@@ -4,513 +4,401 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
 	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 )
 
-// ---------------------- Public functions ----------------------
+// This file adapts the provider's user and team-membership operations onto the
+// generated Player API client (internal/playerclient). Signatures unchanged.
+// The private helpers here (addUser, findMembershipID, getMembership,
+// getUsersInTeam, getRoleByName) are also used by player_api_team.go.
 
-// RemoveUsers removes the specified users from the specified teams
-//
-// param teamsToUsers: Maps each team to the users that should be removed from it
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns some error on failure or nil on success
+// RemoveUsers removes the specified users from the specified teams.
 func RemoveUsers(teamsToUsers map[string][]string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
 	for team := range teamsToUsers {
+		teamID, err := uuid.Parse(team)
+		if err != nil {
+			return err
+		}
 		for _, user := range teamsToUsers[team] {
-			url := util.GetPlayerApiUrl(m) + "teams/" + team + "/users/" + user
-			request, err := http.NewRequest("DELETE", url, nil)
-			request.Header.Add("Authorization", "Bearer "+auth)
-			client := &http.Client{}
-
-			response, err := client.Do(request)
+			userID, err := uuid.Parse(user)
 			if err != nil {
 				return err
 			}
-
-			status := response.StatusCode
-			if status != http.StatusOK {
-				return fmt.Errorf("player API returned with status code %d when removing user from team", status)
+			resp, err := client.RemoveUserFromTeamWithResponse(context.Background(), teamID, userID)
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode() != http.StatusOK {
+				return fmt.Errorf("player API returned with status code %d when removing user from team", resp.StatusCode())
 			}
 		}
 	}
 	return nil
 }
 
-// AddUsersToTeam adds the specified users to the specified team
-//
-// param users: The IDs of the users to add
-//
-// param team: The ID of the team to add the users to
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns some error on failure or nil on success
+// AddUsersToTeam adds the specified users to the specified team.
 func AddUsersToTeam(users *[]string, team string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
-	if err != nil {
-		return err
-	}
-
 	for _, user := range *users {
-		url := util.GetPlayerApiUrl(m) + "teams/" + team + "/users/" + user
-		request, err := http.NewRequest("POST", url, nil)
-		request.Header.Add("Authorization", "Bearer "+auth)
-		client := http.Client{}
-
-		response, err := client.Do(request)
-		if err != nil {
+		if err := addUser(user, team, m); err != nil {
 			return err
 		}
-
-		status := response.StatusCode
-		if status != http.StatusOK {
-			return fmt.Errorf("player API returned with status code %d when getting users from team", status)
-		}
 	}
-
 	return nil
 }
 
-// SetUserRole sets this user's role within their team
-//
-// param teamID: The team to set a user's role within
-//
-// param viewID: The view in which the team where the role is being set lives
-//
-// user: The user to set a role for
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns some error on failure or nil on success
+// SetUserRole sets a user's role within their team membership.
 func SetUserRole(teamID, viewID string, user structs.UserInfo, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// Find the ID of the relevant TeamMembership
-	url := util.GetPlayerApiUrl(m) + "users/" + user.ID + "/views/" + viewID + "/team-memberships"
-	id, err := findMembershipID(url, teamID, auth)
+	// Find the relevant TeamMembership id for this user/view/team.
+	membershipID, err := findMembershipID(user.ID, viewID, teamID, m)
 	if err != nil {
 		return err
 	}
 
-	// Look up the role by name
-	role, err := getRoleByName(user.Role.(string), auth, m)
+	// Resolve the role name to its id.
+	roleID, err := getRoleByName(roleString(user.Role), m)
+	if err != nil {
+		return err
+	}
+	rid, err := uuid.Parse(roleID)
+	if err != nil {
+		return err
+	}
+	mID, err := uuid.Parse(membershipID)
 	if err != nil {
 		return err
 	}
 
-	// Set the role
-	payload, err := json.Marshal(map[string]interface{}{
-		"roleId": role,
-	})
+	resp, err := client.UpdateTeamMembershipWithResponse(context.Background(), mID,
+		playerclient.EditTeamMembershipCommand{RoleId: &rid})
 	if err != nil {
 		return err
 	}
-
-	url = util.GetPlayerApiUrl(m) + "team-memberships/" + id
-	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := http.Client{}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return err
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("player API returned with status code %d when setting user role", resp.StatusCode())
 	}
-
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return fmt.Errorf("player API returned with status code %d when setting user role", status)
-	}
-
 	return nil
 }
 
-// CreateUser creates a new player user. Called whenever a new identity account is created.
-//
-// param user a struct representing the user to create
-//
-// param name the name of the user
-//
-// param m: A map containing configuration info for the provider
-//
-// returns nil on success or some error on failure
+// CreateUser creates a new Player user.
 func CreateUser(user structs.PlayerUser, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// If a role was set, find its ID. Otherwise set role field to nil
-	var roleID interface{} = nil
-	if user.Role != "" {
-		role, err := getRoleByName(user.Role.(string), auth, m)
+	userID, err := uuid.Parse(user.ID)
+	if err != nil {
+		return err
+	}
+
+	body := playerclient.CreateUserCommand{
+		Id:   &userID,
+		Name: strPtr(user.Name),
+	}
+	if r := roleString(user.Role); r != "" {
+		roleID, err := getRoleByName(r, m)
 		if err != nil {
 			return err
 		}
-		roleID = role
+		rid, err := uuid.Parse(roleID)
+		if err != nil {
+			return err
+		}
+		body.RoleId = &rid
 	}
-	user.Role = roleID
 
-	payload, err := json.Marshal(user)
+	resp, err := client.CreateUserWithResponse(context.Background(), body)
 	if err != nil {
 		return err
 	}
-
-	url := util.GetPlayerApiUrl(m) + "users"
-	request, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(payload))
-	if err != nil {
-		return err
+	if resp.StatusCode() != http.StatusCreated {
+		return fmt.Errorf("error creating user in Player. API returned status code %d", resp.StatusCode())
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-
-	if response.StatusCode != http.StatusCreated {
-		return fmt.Errorf("Error creating user in Player. API returned status code %d", response.StatusCode)
-	}
-
 	return nil
 }
 
-// ReadUser returns a struct representing a given user
-//
-// param id: The ID of the user to consider
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns the user struct and an optional error value
+// ReadUser returns a struct representing a given user.
 func ReadUser(id string, m map[string]string) (*structs.PlayerUser, error) {
-	response, err := getUserByID(id, m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Error deleting user in Player. API returned status code %d", response.StatusCode)
-	}
-
-	// Read response body into struct
-	user := new(structs.PlayerUser)
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	err = json.Unmarshal([]byte(asStr), user)
+	userID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, err
 	}
 
+	resp, err := client.GetUserWithResponse(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("error reading user in Player. API returned status code %d", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("player API returned status 200 with an empty body when reading user %s", id)
+	}
+
+	user := &structs.PlayerUser{Name: derefStr(resp.JSON200.Name)}
+	if resp.JSON200.Id != nil {
+		user.ID = resp.JSON200.Id.String()
+	}
+	// Role carries the role id (interface{}), matching the prior behavior where
+	// the resource resolves it to a name on read.
+	if resp.JSON200.RoleId != nil {
+		user.Role = resp.JSON200.RoleId.String()
+	}
 	return user, nil
 }
 
-// UserExists returns true if a user exists and false otherwise
-//
-// param id: The ID of the user to consider
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns whether the user exists and an optional error value
+// UserExists returns true if a user exists.
 func UserExists(id string, m map[string]string) (bool, error) {
-	resp, err := getUserByID(id, m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 
-	return resp.StatusCode != 404, nil
+	userID, err := uuid.Parse(id)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := client.GetUserWithResponse(context.Background(), userID)
+	if err != nil {
+		return false, err
+	}
+	return resp.StatusCode() != http.StatusNotFound, nil
 }
 
 // UpdateUser updates a user in Player.
-//
-// param user a struct representing the user to update
-//
-// param name the name of the user
-//
-// param m: A map containing configuration info for the provider
-//
-// returns nil on success or some error on failure
 func UpdateUser(user structs.PlayerUser, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// If a role was set, find its ID. Otherwise set role field to nil
-	var roleID interface{} = nil
-	if user.Role.(string) != "" {
-		role, err := getRoleByName(user.Role.(string), auth, m)
+	userID, err := uuid.Parse(user.ID)
+	if err != nil {
+		return err
+	}
+
+	body := playerclient.EditUserCommand{Name: strPtr(user.Name)}
+	if r := roleString(user.Role); r != "" {
+		roleID, err := getRoleByName(r, m)
 		if err != nil {
 			return err
 		}
-		roleID = role
+		rid, err := uuid.Parse(roleID)
+		if err != nil {
+			return err
+		}
+		body.RoleId = &rid
 	}
-	user.Role = roleID
 
-	payload, err := json.Marshal(user)
+	resp, err := client.UpdateUserWithResponse(context.Background(), userID, body)
 	if err != nil {
 		return err
 	}
-
-	url := util.GetPlayerApiUrl(m) + "users/" + user.ID
-	request, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(payload))
-	if err != nil {
-		return err
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("error updating user in Player. API returned status code %d", resp.StatusCode())
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("Error updating user in Player. API returned status code %d", response.StatusCode)
-	}
-
 	return nil
 }
 
-// DeleteUser deletes the user with the given id.
-//
-// param id: The ID of the user to delete
-//
-// param m: A map containing configuration info for the provider
-//
-// returns nil on success or some error on failure
+// DeleteUser deletes a user.
 func DeleteUser(id string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "users/" + id
-	request, err := http.NewRequest(http.MethodDelete, url, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	response, err := client.Do(request)
+	userID, err := uuid.Parse(id)
 	if err != nil {
 		return err
 	}
 
-	if response.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("Error deleting user in Player. API returned status code %d", response.StatusCode)
+	resp, err := client.DeleteUserWithResponse(context.Background(), userID)
+	if err != nil {
+		return err
 	}
-
+	if resp.StatusCode() != http.StatusNoContent {
+		return fmt.Errorf("error deleting user in Player. API returned status code %d", resp.StatusCode())
+	}
 	return nil
 }
 
-// ---------------------- Private functions ----------------------
+// ---------------------- Private helpers (shared with player_api_team.go) ----------------------
 
-// adds the specified user to the specified team
-//
-// param users: A slice of UserInfo struct pointers representing the users to be created
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns some error on failure or nil on success
+// addUser adds a single user to a team.
 func addUser(userID, teamID string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// Add the user to their team
-	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/users/" + userID
-	request, err := http.NewRequest("POST", url, nil)
-	request.Header.Add("Authorization", "Bearer "+auth)
-	client := &http.Client{}
-
-	response, err := client.Do(request)
+	uID, err := uuid.Parse(userID)
+	if err != nil {
+		return err
+	}
+	tID, err := uuid.Parse(teamID)
 	if err != nil {
 		return err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return fmt.Errorf("player API returned with status code %d when adding user to team", status)
+	resp, err := client.AddUserToTeamWithResponse(context.Background(), tID, uID)
+	if err != nil {
+		return err
 	}
-
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("player API returned with status code %d when adding user to team", resp.StatusCode())
+	}
 	return nil
 }
 
-// Find the ID of the relevant TeamMembership
-func findMembershipID(url, teamID, auth string) (string, error) {
-	request, err := http.NewRequest("GET", url, nil)
-	request.Header.Add("Authorization", "Bearer "+auth)
-	client := http.Client{}
-
-	response, err := client.Do(request)
+// findMembershipID returns the team-membership id for the given user/view/team.
+func findMembershipID(userID, viewID, teamID string, m map[string]string) (string, error) {
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return "", err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return "", fmt.Errorf("player API returned with status code %d when looking for teamMembership id", status)
+	uID, err := uuid.Parse(userID)
+	if err != nil {
+		return "", err
 	}
-
-	// Unmarshal response into map slice to look for ID
-	asMap := new([]map[string]interface{})
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	err = json.Unmarshal([]byte(asStr), asMap)
+	vID, err := uuid.Parse(viewID)
 	if err != nil {
 		return "", err
 	}
 
-	// Look for ID of the relevant membership
-	for _, membership := range *asMap {
-		if membership["teamId"] == teamID {
-			return membership["id"].(string), nil
+	resp, err := client.GetTeamMembershipsWithResponse(context.Background(), uID, vID)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("player API returned with status code %d when looking for teamMembership id", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", fmt.Errorf("no membership found for the given user and view")
+	}
+	for _, ms := range *resp.JSON200 {
+		if ms.TeamId != nil && ms.TeamId.String() == teamID && ms.Id != nil {
+			return ms.Id.String(), nil
 		}
 	}
-
 	return "", fmt.Errorf("no membership found for the given user and view")
 }
 
-// Returns the teamMembership with the given id
-func getMembership(id, auth string, m map[string]string) (string, error) {
-	url := util.GetPlayerApiUrl(m) + "team-memberships/" + id
-
-	request, err := http.NewRequest("GET", url, nil)
-	request.Header.Add("Authorization", "Bearer "+auth)
-	client := http.Client{}
-
-	response, err := client.Do(request)
+// getMembership returns the role name for the team-membership with the given id.
+func getMembership(id string, m map[string]string) (string, error) {
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return "", err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return "", fmt.Errorf("player API returned with status code %d when getting TeamMembership", status)
-	}
-
-	asMap := make(map[string]interface{})
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	err = json.Unmarshal([]byte(asStr), &asMap)
+	mID, err := uuid.Parse(id)
 	if err != nil {
 		return "", err
 	}
 
-	role := asMap["roleName"]
-	return util.Ternary(role == nil, "", role).(string), nil
+	resp, err := client.GetTeamMembershipWithResponse(context.Background(), mID)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("player API returned with status code %d when getting TeamMembership", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", nil
+	}
+	return derefStr(resp.JSON200.RoleName), nil
 }
 
-// Returns all users in the given team
+// getUsersInTeam returns all users in a team, each with its membership role name.
 func getUsersInTeam(teamID, viewID string, m map[string]string) ([]structs.UserInfo, error) {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/users"
-	request, err := http.NewRequest("GET", url, nil)
-	request.Header.Add("Authorization", "Bearer "+auth)
-	client := http.Client{}
-
-	response, err := client.Do(request)
+	tID, err := uuid.Parse(teamID)
 	if err != nil {
 		return nil, err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("player API returned with status code %d when getting users from team", status)
-	}
-
-	// Read the response body
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	users := new([]map[string]interface{})
-	err = json.Unmarshal([]byte(asStr), users)
+	resp, err := client.GetTeamUsersWithResponse(context.Background(), tID)
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("player API returned with status code %d when getting users from team", resp.StatusCode())
+	}
 
-	userStructs := new([]structs.UserInfo)
-
-	for _, user := range *users {
-		userID := user["id"].(string)
-		// Get team membership by id, assign it to RoleID field
-		url = util.GetPlayerApiUrl(m) + "users/" + userID + "/views/" + viewID + "/team-memberships"
-		id, err := findMembershipID(url, teamID, auth)
+	out := []structs.UserInfo{}
+	if resp.JSON200 == nil {
+		return out, nil
+	}
+	for _, u := range *resp.JSON200 {
+		if u.Id == nil {
+			continue
+		}
+		userID := u.Id.String()
+		membershipID, err := findMembershipID(userID, viewID, teamID, m)
 		if err != nil {
 			return nil, err
 		}
-		role, err := getMembership(id, auth, m)
+		role, err := getMembership(membershipID, m)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("! Role of current user: %s", role)
-
-		curr := &structs.UserInfo{
-			ID:   userID,
-			Role: role,
-		}
-		*userStructs = append(*userStructs, *curr)
+		out = append(out, structs.UserInfo{ID: userID, Role: role})
 	}
-
-	return *userStructs, nil
+	return out, nil
 }
 
-func getUserByID(id string, m map[string]string) (*http.Response, error) {
-	auth, err := util.GetAuth(m)
+// roleString extracts a string role from an interface{} field (string or nil).
+func roleString(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// getRoleByName returns the id of the (user) role with the given name. Shared
+// with player_api_team.go's user-role handling.
+func getRoleByName(role string, m map[string]string) (string, error) {
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "users/" + id
-	request, err := http.NewRequest(http.MethodGet, url, nil)
+	resp, err := client.GetRoleByNameWithResponse(context.Background(), role)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("player API returned with status code %d looking for role %v", resp.StatusCode(), role)
 	}
-
-	return response, nil
+	if resp.JSON200 == nil || resp.JSON200.Id == nil {
+		return "", fmt.Errorf("player API returned no id for role %v", role)
+	}
+	return resp.JSON200.Id.String(), nil
 }

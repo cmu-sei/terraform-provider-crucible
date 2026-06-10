@@ -1,0 +1,16 @@
+# oapi-codegen config for the Player VM API client.
+#
+# Regenerate with `task gen-vm-client` (fetches the spec from a running VM API,
+# then runs oapi-codegen against this config). The spec is committed alongside
+# this file as openapi.json so ordinary builds need no live stack.
+#
+# The full Player VM API spec is generated (no operation filter) so the client
+# stays the source of truth: new endpoints show up automatically on regen rather
+# than needing a YAML edit to be discovered. Only a subset of the generated
+# methods is currently wired into internal/api/vm_api.go; the rest are unused
+# until a resource needs them.
+package: vmclient
+output: vmclient.gen.go
+generate:
+  models: true
+  client: true

@@ -4,17 +4,33 @@
 package main
 
 import (
+	"context"
+	"flag"
+	"log"
+
 	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
 
-	"github.com/hashicorp/terraform-plugin-sdk/plugin"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 )
 
-// Runs the provider
+// version is set by the goreleaser configuration to the appropriate value for
+// the compiled binary via the main.version ldflag.
+var version string = "dev"
+
+// Runs the provider.
 func main() {
-	plugin.Serve(&plugin.ServeOpts{
-		ProviderFunc: func() terraform.ResourceProvider {
-			return provider.Provider()
-		},
-	})
+	var debug bool
+
+	flag.BoolVar(&debug, "debug", false, "set to true to run the provider with support for debuggers like delve")
+	flag.Parse()
+
+	opts := providerserver.ServeOpts{
+		Address: "registry.terraform.io/cmu-sei/crucible",
+		Debug:   debug,
+	}
+
+	err := providerserver.Serve(context.Background(), provider.New(version), opts)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 }

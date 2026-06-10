@@ -4,301 +4,221 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
 	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 )
 
-// -------------------- API Wrappers --------------------
+// This file adapts the provider's application and application-instance operations
+// onto the generated Player API client (internal/playerclient). Signatures
+// unchanged. readApps is shared with player_api_view.go; getTeamAppInstances is
+// used by player_api_team.go.
 
-// CreateApps creates an application for each of the structs passed.
-//
-// param apps: a list of structs representing the applications to create
-//
-// param m: A map containing configuration info for the provider
-//
-// param viewID: The view to create this app under
-//
-// Returns some error on failure or nil on success
+// CreateApps creates an application for each struct passed, under the given view.
 func CreateApps(apps *[]*structs.AppInfo, m map[string]string, viewID string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// Create a new application for each struct
+	vID, err := uuid.Parse(viewID)
+	if err != nil {
+		return err
+	}
+
 	for i, app := range *apps {
-		asJSON, err := json.Marshal(app)
+		body := playerclient.CreateApplicationCommand{
+			ViewId:           vID,
+			Name:             ifaceStrPtr(app.Name),
+			Url:              ifaceStrPtr(app.URL),
+			Icon:             ifaceStrPtr(app.Icon),
+			Embeddable:       ifaceBoolPtr(app.Embeddable),
+			LoadInBackground: ifaceBoolPtr(app.LoadInBackground),
+		}
+		if tid := ifaceStrPtr(app.AppTemplateID); tid != nil {
+			id, err := uuid.Parse(*tid)
+			if err != nil {
+				return err
+			}
+			body.ApplicationTemplateId = &id
+		}
+
+		resp, err := client.CreateApplicationWithResponse(context.Background(), vID, body)
 		if err != nil {
 			return err
 		}
-
-		url := util.GetPlayerApiUrl(m) + "views/" + viewID + "/applications"
-		log.Printf("! creating app. url: %v", url)
-		log.Printf("! Payload: %+v", app)
-		request, err := http.NewRequest("POST", url, bytes.NewBuffer(asJSON))
-		if err != nil {
-			return err
+		if resp.StatusCode() != http.StatusCreated {
+			return fmt.Errorf("player API returned with status code %d when creating app. %d apps created before error", resp.StatusCode(), i)
 		}
-		request.Header.Add("Authorization", "Bearer "+auth)
-		request.Header.Set("Content-Type", "application/json")
-		client := &http.Client{}
-
-		response, err := client.Do(request)
-		if err != nil {
-			return err
+		if resp.JSON201 == nil || resp.JSON201.Id == nil {
+			return fmt.Errorf("player API returned status 201 with no id when creating app")
 		}
-		log.Printf("! Response: %v", response)
-
-		status := response.StatusCode
-		if status != http.StatusCreated {
-			return fmt.Errorf("player API returned with status code %d when creating app. %d apps created before error", status, i)
-		}
-
-		// Read and parse response body
-		var createdApp struct {
-			Id string `json:"id"`
-		}
-		if err := json.NewDecoder(response.Body).Decode(&createdApp); err != nil {
-			return fmt.Errorf("failed to decode response JSON: %w", err)
-		}
-
-		// Assign returned ID to app
-		app.ID = createdApp.Id
+		app.ID = resp.JSON201.Id.String()
 	}
 	return nil
 }
 
-// UpdateApps updates the applications specified
-//
-// param apps: a list of structs.AppInfo structs to be updated
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns some error on failure or nil on success
+// UpdateApps updates the specified applications.
 func UpdateApps(apps *[]*structs.AppInfo, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// Update each application
 	for i, app := range *apps {
-		asJSON, err := json.Marshal(app)
+		appID, err := uuid.Parse(app.ID)
+		if err != nil {
+			return err
+		}
+		viewID, err := uuid.Parse(app.ViewID)
 		if err != nil {
 			return err
 		}
 
-		url := util.GetPlayerApiUrl(m) + "applications/" + app.ID
-		request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
+		body := playerclient.EditApplicationCommand{
+			ViewId:           viewID,
+			Name:             ifaceStrPtr(app.Name),
+			Url:              ifaceStrPtr(app.URL),
+			Icon:             ifaceStrPtr(app.Icon),
+			Embeddable:       ifaceBoolPtr(app.Embeddable),
+			LoadInBackground: ifaceBoolPtr(app.LoadInBackground),
+		}
+		if tid := ifaceStrPtr(app.AppTemplateID); tid != nil {
+			id, err := uuid.Parse(*tid)
+			if err != nil {
+				return err
+			}
+			body.ApplicationTemplateId = &id
+		}
+
+		resp, err := client.UpdateApplicationWithResponse(context.Background(), appID, body)
 		if err != nil {
 			return err
 		}
-		request.Header.Add("Authorization", "Bearer "+auth)
-		request.Header.Set("Content-Type", "application/json")
-		client := &http.Client{}
-
-		response, err := client.Do(request)
-		if err != nil {
-			return err
-		}
-
-		status := response.StatusCode
-		if status != http.StatusOK {
-			return fmt.Errorf("player API returned with status code %d when updating app. %d apps updated before error", status, i)
+		if resp.StatusCode() != http.StatusOK {
+			return fmt.Errorf("player API returned with status code %d when updating app. %d apps updated before error", resp.StatusCode(), i)
 		}
 	}
 	return nil
 }
 
-// DeleteApps deletes the applications specified in ids
-//
-// Returns nil on success or some error on failure
+// DeleteApps deletes the specified applications.
 func DeleteApps(ids *[]string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
 	for i, id := range *ids {
-		url := util.GetPlayerApiUrl(m) + "applications/" + id
-		request, err := http.NewRequest("DELETE", url, nil)
+		appID, err := uuid.Parse(id)
 		if err != nil {
 			return err
 		}
-		request.Header.Add("Authorization", "Bearer "+auth)
-		client := &http.Client{}
-
-		response, err := client.Do(request)
+		resp, err := client.DeleteApplicationWithResponse(context.Background(), appID)
 		if err != nil {
 			return err
 		}
-
-		status := response.StatusCode
-		if status != http.StatusNoContent {
-			return fmt.Errorf("player API returned with status code %d when deleting app. %d apps deleted before error", status, i)
+		if resp.StatusCode() != http.StatusNoContent {
+			return fmt.Errorf("player API returned with status code %d when deleting app. %d apps deleted before error", resp.StatusCode(), i)
 		}
 	}
 	return nil
-
 }
 
-// UpdateAppInstance updates an application instance with new information
-//
-// param inst: A struct representing the instance to update
-//
-// param teamID: The ID of the team this instance lives in
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns some error on failure or nil on success
+// UpdateAppInstance updates an application instance.
 func UpdateAppInstance(inst structs.AppInstance, teamID string, m map[string]string) error {
-	log.Printf("! In update app instance")
-
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	payload := make(map[string]interface{})
-	payload["id"] = inst.ID
-	payload["teamId"] = teamID
-	payload["displayOrder"] = inst.DisplayOrder
-	payload["applicationId"] = inst.Parent
-
-	log.Printf("! Updating app instance with payload %+v", payload)
-
-	asJSON, err := json.Marshal(payload)
+	instID, err := uuid.Parse(inst.ID)
 	if err != nil {
 		return err
 	}
-
-	url := util.GetPlayerApiUrl(m) + "application-instances/" + inst.ID
-	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
+	tID, err := uuid.Parse(teamID)
 	if err != nil {
 		return err
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	log.Printf("! Request: %+v", request)
-
-	response, err := client.Do(request)
+	appID, err := uuid.Parse(inst.Parent)
 	if err != nil {
 		return err
 	}
+	order := float32(inst.DisplayOrder)
 
-	log.Printf("! Response: %+v", response)
-
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return fmt.Errorf("player API returned with status code %d when updating app instance", status)
+	resp, err := client.UpdateApplicationInstanceWithResponse(context.Background(), instID,
+		playerclient.EditApplicationInstanceCommand{
+			ApplicationId: appID,
+			TeamId:        tID,
+			DisplayOrder:  &order,
+		})
+	if err != nil {
+		return err
 	}
-
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("player API returned with status code %d when updating app instance", resp.StatusCode())
+	}
 	return nil
 }
 
-// AddApplication Adds an application to a team.
-//
-// param appID: The ID of the application to add
-//
-// param displayOrder: The displayOrder field to set on this application instance
-//
-// param teamID: The ID of the team to add to
-//
-// param m: A map containing configuration info for the provider
-//
-// returns the ID of the app instance and an error value
+// AddApplication adds an application to a team and returns the app-instance id.
 func AddApplication(appID, teamID string, displayOrder float64, m map[string]string) (string, error) {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return "", err
 	}
 
-	payload := make(map[string]interface{})
-	payload["teamId"] = teamID
-	payload["applicationId"] = appID
-	payload["displayOrder"] = displayOrder
-
-	asJSON, err := json.Marshal(payload)
+	tID, err := uuid.Parse(teamID)
 	if err != nil {
 		return "", err
 	}
-
-	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/application-instances"
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(asJSON))
+	aID, err := uuid.Parse(appID)
 	if err != nil {
 		return "", err
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
+	order := float32(displayOrder)
 
-	client := &http.Client{}
-	response, err := client.Do(request)
+	resp, err := client.CreateApplicationInstanceWithResponse(context.Background(), tID,
+		playerclient.CreateApplicationInstanceCommand{
+			ApplicationId: aID,
+			TeamId:        tID,
+			DisplayOrder:  &order,
+		})
 	if err != nil {
 		return "", err
 	}
-	status := response.StatusCode
-	if status != http.StatusCreated {
-		return "", fmt.Errorf("Player API returned with status %d when adding application to team", status)
+	if resp.StatusCode() != http.StatusCreated {
+		return "", fmt.Errorf("player API returned with status %d when adding application to team", resp.StatusCode())
 	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	body := make(map[string]interface{})
-
-	err = json.Unmarshal([]byte(asStr), &body)
-	if err != nil {
-		return "", err
+	if resp.JSON201 == nil || resp.JSON201.Id == nil {
+		return "", fmt.Errorf("player API returned status 201 with no id when adding application to team")
 	}
-
-	return body["id"].(string), nil
+	return resp.JSON201.Id.String(), nil
 }
 
-// DeleteAppInstances deletes all of the specified application instances
-//
-// param toDelete: The IDs of the app instances to delete
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns some error on failure or nil on success
+// DeleteAppInstances deletes the specified application instances.
 func DeleteAppInstances(toDelete *[]string, m map[string]string) error {
-	log.Printf("! In DeleteAppInstances")
-
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
 	for i, id := range *toDelete {
-		url := util.GetPlayerApiUrl(m) + "application-instances/" + id
-		request, err := http.NewRequest("DELETE", url, nil)
+		instID, err := uuid.Parse(id)
 		if err != nil {
 			return err
 		}
-		request.Header.Add("Authorization", "Bearer "+auth)
-		client := &http.Client{}
-
-		log.Printf("! Request: %+v", request)
-
-		response, err := client.Do(request)
+		resp, err := client.DeleteApplicationInstanceWithResponse(context.Background(), instID)
 		if err != nil {
 			return err
 		}
-
-		log.Printf("! Response: %+v", response)
-
-		status := response.StatusCode
-		if status != http.StatusNoContent {
-			return fmt.Errorf("player API returned with status code %d when deleting app instance. %d instances deleted before error", status, i)
+		if resp.StatusCode() != http.StatusNoContent {
+			return fmt.Errorf("player API returned with status code %d when deleting app instance. %d instances deleted before error", resp.StatusCode(), i)
 		}
 	}
 	return nil
@@ -306,84 +226,86 @@ func DeleteAppInstances(toDelete *[]string, m map[string]string) error {
 
 // -------------------- Helper functions --------------------
 
-// Reads the Applications for a given view.
-//
-// param id: the if of the view to consider
-//
-// Returns a: list of structs.AppInfo structs and an error value which is nil on success and some value on failure
+// readApps reads the applications for a given view.
 func readApps(id string, m map[string]string) (*[]structs.AppInfo, error) {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "views/" + id + "/applications"
-	request, err := http.NewRequest("GET", url, nil)
+	viewID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
 
-	client := &http.Client{}
-	response, err := client.Do(request)
+	resp, err := client.GetViewApplicationsWithResponse(context.Background(), viewID)
 	if err != nil {
 		return nil, err
 	}
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("Player API returned with status %d when retreiving application info", status)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("player API returned with status %d when retreiving application info", resp.StatusCode())
 	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
 
 	apps := new([]structs.AppInfo)
-
-	err = json.Unmarshal([]byte(asStr), apps)
-	if err != nil {
-		return nil, err
+	if resp.JSON200 == nil {
+		return apps, nil
 	}
-
+	for _, a := range *resp.JSON200 {
+		info := structs.AppInfo{
+			Name:             strOrNil(a.Name),
+			URL:              strOrNil(a.Url),
+			Icon:             strOrNil(a.Icon),
+			Embeddable:       boolOrNil(a.Embeddable),
+			LoadInBackground: boolOrNil(a.LoadInBackground),
+			ViewID:           id,
+		}
+		if a.Id != nil {
+			info.ID = a.Id.String()
+		}
+		if a.ApplicationTemplateId != nil {
+			info.AppTemplateID = a.ApplicationTemplateId.String()
+		}
+		*apps = append(*apps, info)
+	}
 	return apps, nil
 }
 
-// Returns all the application instances for a given team
+// getTeamAppInstances returns all application instances for a team.
 func getTeamAppInstances(teamID string, m map[string]string) (*[]structs.AppInstance, error) {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "teams/" + teamID + "/application-instances"
-	request, err := http.NewRequest("GET", url, nil)
+	tID, err := uuid.Parse(teamID)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
 
-	client := &http.Client{}
-	response, err := client.Do(request)
+	resp, err := client.GetTeamApplicationInstancesWithResponse(context.Background(), tID)
 	if err != nil {
 		return nil, err
 	}
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("Player API returned with status %d when retreiving application info", status)
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("player API returned with status %d when retreiving application info", resp.StatusCode())
 	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
 
 	instances := new([]structs.AppInstance)
-
-	err = json.Unmarshal([]byte(asStr), instances)
-	if err != nil {
-		return nil, err
+	if resp.JSON200 == nil {
+		return instances, nil
 	}
-
+	for _, inst := range *resp.JSON200 {
+		ai := structs.AppInstance{
+			Name:         derefStr(inst.Name),
+			DisplayOrder: float64(derefFloat32(inst.DisplayOrder)),
+		}
+		if inst.Id != nil {
+			ai.ID = inst.Id.String()
+		}
+		if inst.ApplicationId != nil {
+			ai.Parent = inst.ApplicationId.String()
+		}
+		*instances = append(*instances, ai)
+	}
 	return instances, nil
 }

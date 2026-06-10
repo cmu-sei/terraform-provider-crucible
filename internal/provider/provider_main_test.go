@@ -6,13 +6,24 @@ package provider_test
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"io/ioutil"
+	"io"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
+
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
+
+// testAccProtoV6ProviderFactories provides the Plugin Framework provider to the
+// acceptance test harness via the v6 protocol.
+var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
+	"crucible": providerserver.NewProtocol6WithError(provider.New("test")()),
+}
 
 // This file will hold the global variables needed by the various test functions. It will also set up these globals
 // by reading the config. Unfortunately Go does not support file scoped variables for some reason so other test files
@@ -20,21 +31,15 @@ import (
 
 // Configuration strings. These are the things normally found in a .tf file
 
-// Config strings that map to the provider itself
+// Config strings that map to the provider itself.
 var correctCreds string
 var incorrectCreds string
 
-// Config strings that map to a VM resource
-var configVMNormal string
-var configVMFirst string
-var configVMSecond string
-var configVMIncorrectUserID string
-var configVMNormalUpdated string
-var configVMFirstUpdated string
-var configVMSecondUpdated string
-var configVMMultiTeams string
+// VM resource configs are built inline per-test (see
+// player_virtual_machine_server_test.go), each provisioning its own
+// crucible_player_view to supply real team ids, so there are no VM config globals.
 
-// Config strings for views
+// Config strings for views.
 var configViewEmpty string
 var configViewEmptyUpdated string
 var configViewApps string
@@ -45,8 +50,9 @@ var configViewUsers string
 var configViewUsersUpdated string
 var configViewInstances string
 var configViewInstancesUpdated string
+var configViewInstancesNoInst string
 
-// Structs representing expected state for views
+// Structs representing expected state for views.
 var emptyViewExpected *structs.ViewInfo
 var emptyViewExpectedUpdated *structs.ViewInfo
 var appsViewExpected *structs.ViewInfo
@@ -58,11 +64,11 @@ var userViewExpectedUpdated *structs.ViewInfo
 var instanceViewExpected *structs.ViewInfo
 var instanceViewExpectedUpdated *structs.ViewInfo
 
-// Config strings for app templates
+// Config strings for app templates.
 var configAppTemplate string
 var configAppTemplateUpdated string
 
-// Set up the globals
+// Set up the globals.
 func init() {
 	fp, err := os.Open("../../configs/testConfigs.json")
 	if err != nil {
@@ -70,25 +76,18 @@ func init() {
 	}
 	defer fp.Close()
 
-	bytes, err := ioutil.ReadAll(fp)
+	bytes, err := io.ReadAll(fp)
 	if err != nil {
 		panic(err)
 	}
 
 	var asMap map[string]interface{}
-	json.Unmarshal([]byte(bytes), &asMap)
+	if err := json.Unmarshal(bytes, &asMap); err != nil {
+		panic(err)
+	}
 
 	correctCreds = getCreds()
 	incorrectCreds = getIncorrectCreds()
-
-	configVMNormal = getVMResource("configVMNormal", &asMap)
-	configVMFirst = getVMResource("configVMFirst", &asMap)
-	configVMSecond = getVMResource("configVMSecond", &asMap)
-	configVMIncorrectUserID = getVMResource("configVMIncorrectUserID", &asMap)
-	configVMNormalUpdated = getVMResource("configVMNormalUpdated", &asMap)
-	configVMFirstUpdated = getVMResource("configVMFirstUpdated", &asMap)
-	configVMSecondUpdated = getVMResource("configVMSecondUpdated", &asMap)
-	configVMMultiTeams = getVMResource("configVMMultiTeams", &asMap)
 
 	configViewEmpty = getViewResource("configViewEmpty", &asMap)
 	configViewEmptyUpdated = getViewResource("configViewEmptyUpdated", &asMap)
@@ -100,6 +99,7 @@ func init() {
 	configViewUsersUpdated = getViewResource("configViewUsersUpdated", &asMap)
 	configViewInstances = getViewResource("configViewInstances", &asMap)
 	configViewInstancesUpdated = getViewResource("configViewInstancesUpdated", &asMap)
+	configViewInstancesNoInst = getViewResource("configViewInstancesNoInst", &asMap)
 
 	configAppTemplate = getTemplateResource("configAppTemplate", &asMap)
 	configAppTemplateUpdated = getTemplateResource("configAppTemplateUpdated", &asMap)
@@ -189,13 +189,13 @@ func init() {
 		Teams: []structs.TeamInfo{
 			{
 				Name:        "bar",
-				Role:        "TestRole",
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b", "7be07cd5-104e-4770-800b-80ac26cda6d5"},
 			},
 			{
 				Name:        "foo",
-				Role:        nil,
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b"},
 			},
 		},
 	}
@@ -225,13 +225,13 @@ func init() {
 		Teams: []structs.TeamInfo{
 			{
 				Name:        "barUpdated",
-				Role:        "TestRole",
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b", "7be07cd5-104e-4770-800b-80ac26cda6d5"},
 			},
 			{
 				Name:        "fooUpdated",
-				Role:        nil,
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b"},
 			},
 		},
 	}
@@ -261,26 +261,26 @@ func init() {
 		Teams: []structs.TeamInfo{
 			{
 				Name:        "bar",
-				Role:        "TestRole",
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b", "7be07cd5-104e-4770-800b-80ac26cda6d5"},
 				Users: []structs.UserInfo{
 					{
-						ID:   "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
-						Role: "Super User",
+						ID:   "9b3b331c-10c1-448b-8114-21b2586d8e38",
+						Role: nil,
 					},
 					{
-						ID: "ad580e55-f5b3-4865-b3ed-acec087450a7",
+						ID: "3d8332fa-2e35-4823-b83f-732eb9483690",
 					},
 				},
 			},
 			{
 				Name:        "foo",
-				Role:        nil,
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b"},
 				Users: []structs.UserInfo{
 					{
-						ID:   "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
-						Role: "Super User",
+						ID:   "9b3b331c-10c1-448b-8114-21b2586d8e38",
+						Role: nil,
 					},
 				},
 			},
@@ -312,22 +312,22 @@ func init() {
 		Teams: []structs.TeamInfo{
 			{
 				Name:        "bar",
-				Role:        "TestRole",
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b", "7be07cd5-104e-4770-800b-80ac26cda6d5"},
 				Users: []structs.UserInfo{
 					{
-						ID: "ad580e55-f5b3-4865-b3ed-acec087450a7",
+						ID: "3d8332fa-2e35-4823-b83f-732eb9483690",
 					},
 				},
 			},
 			{
 				Name:        "foo",
-				Role:        nil,
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b"},
 				Users: []structs.UserInfo{
 					{
-						ID:   "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
-						Role: "Super User",
+						ID:   "9b3b331c-10c1-448b-8114-21b2586d8e38",
+						Role: nil,
 					},
 				},
 			},
@@ -359,15 +359,15 @@ func init() {
 		Teams: []structs.TeamInfo{
 			{
 				Name:        "bar",
-				Role:        "TestRole",
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b", "7be07cd5-104e-4770-800b-80ac26cda6d5"},
 				Users: []structs.UserInfo{
 					{
-						ID:   "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
-						Role: "ebf35fab-eaa6-435b-aa0c-566056a56fba",
+						ID:   "9b3b331c-10c1-448b-8114-21b2586d8e38",
+						Role: nil,
 					},
 					{
-						ID: "ad580e55-f5b3-4865-b3ed-acec087450a7",
+						ID: "3d8332fa-2e35-4823-b83f-732eb9483690",
 					},
 				},
 				AppInstances: []structs.AppInstance{
@@ -383,12 +383,12 @@ func init() {
 			},
 			{
 				Name:        "foo",
-				Role:        nil,
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b"},
 				Users: []structs.UserInfo{
 					{
-						ID:   "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
-						Role: "Super User",
+						ID:   "9b3b331c-10c1-448b-8114-21b2586d8e38",
+						Role: nil,
 					},
 				},
 			},
@@ -420,15 +420,15 @@ func init() {
 		Teams: []structs.TeamInfo{
 			{
 				Name:        "bar",
-				Role:        "TestRole",
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b", "f45e79da-7c9d-45d0-8e3a-0786eb8681bf"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b", "7be07cd5-104e-4770-800b-80ac26cda6d5"},
 				Users: []structs.UserInfo{
 					{
-						ID:   "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
-						Role: "Super User",
+						ID:   "9b3b331c-10c1-448b-8114-21b2586d8e38",
+						Role: nil,
 					},
 					{
-						ID: "ad580e55-f5b3-4865-b3ed-acec087450a7",
+						ID: "3d8332fa-2e35-4823-b83f-732eb9483690",
 					},
 				},
 				AppInstances: []structs.AppInstance{
@@ -444,12 +444,12 @@ func init() {
 			},
 			{
 				Name:        "foo",
-				Role:        nil,
-				Permissions: []string{"19e7abe6-3a07-4a24-b86d-cf00ef7e7c2b"},
+				Role:        "View Member",
+				Permissions: []string{"3b135496-c7d9-4bef-b60c-fbcfa1af9c1b"},
 				Users: []structs.UserInfo{
 					{
-						ID:   "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf",
-						Role: "Super User",
+						ID:   "9b3b331c-10c1-448b-8114-21b2586d8e38",
+						Role: nil,
 					},
 				},
 			},
@@ -458,6 +458,20 @@ func init() {
 }
 
 // Helper functions for setting up configs
+
+// tfConfig prepends the standard (correct) provider block to a resource config,
+// producing a complete Terraform configuration. This replaces the
+// `correctCreds + cfg` concatenation used throughout the acceptance tests.
+func tfConfig(resourceConfig string) string {
+	return correctCreds + resourceConfig
+}
+
+// tfConfigBadCreds is tfConfig's counterpart for the negative auth test: it
+// prepends the provider block with an incorrect password so the first API call
+// fails the OAuth2 password grant.
+func tfConfigBadCreds(resourceConfig string) string {
+	return incorrectCreds + resourceConfig
+}
 
 func getCreds() string {
 	ret := fmt.Sprintf(`provider "%s" {
@@ -469,11 +483,12 @@ func getCreds() string {
 		client_secret = "%s"
 		vm_api_url = "%s"
 		player_api_url = "%s"
+		caster_api_url = "%s"
 	}
-	
-	`, os.Getenv("TF_PROV_NAME"), os.Getenv("TF_USERNAME"), os.Getenv("TF_PASSWORD"), os.Getenv("TF_AUTH_URL"),
-		os.Getenv("TF_TOK_URL"), os.Getenv("TF_CLIENT_ID"), os.Getenv("TF_CLIENT_SECRET"), os.Getenv("TF_VM_API_URL"),
-		os.Getenv("TF_PLAYER_API_URL"))
+
+	`, testEnv("TF_PROV_NAME"), testEnv("TF_USERNAME"), testEnv("TF_PASSWORD"), testEnv("TF_AUTH_URL"),
+		testEnv("TF_TOK_URL"), testEnv("TF_CLIENT_ID"), testEnv("TF_CLIENT_SECRET"), testEnv("TF_VM_API_URL"),
+		testEnv("TF_PLAYER_API_URL"), testEnv("TF_CASTER_API_URL"))
 
 	return ret
 }
@@ -490,41 +505,14 @@ func getIncorrectCreds() string {
 		player_api_url = "%s"
 	}
 	
-	`, os.Getenv("TF_PROV_NAME"), os.Getenv("TF_USERNAME"), "foobarboz", os.Getenv("TF_AUTH_URL"),
-		os.Getenv("TF_TOK_URL"), os.Getenv("TF_CLIENT_ID"), os.Getenv("TF_CLIENT_SECRET"), os.Getenv("TF_VM_API_URL"),
-		os.Getenv("TF_PLAYER_API_URL"))
-	return ret
-}
-
-func getVMResource(key string, asMap *map[string]interface{}) string {
-	subMap := (*asMap)[key].(map[string]interface{})
-	if subMap == nil {
-		panic("Key not found in file")
-	}
-
-	teamIDs := subMap["team_ids"].([]interface{})
-	teamIDsStrSlice := util.ToStringSlice(&teamIDs)
-
-	for i, team := range *teamIDsStrSlice {
-		(*teamIDsStrSlice)[i] = "\"" + team + "\""
-	}
-
-	ret := fmt.Sprintf(`resource "%s" "%s" {
-		vm_id = "%s"
-		url = "%s"
-		name = "%s"
-		user_id = "%s"
-		team_ids = [%v]
-	}
-	
-	`, subMap["provider_name"].(string), subMap["resourceName"].(string), subMap["vm_id"].(string), subMap["url"].(string),
-		subMap["name"].(string), subMap["user_id"].(string), strings.Join(*teamIDsStrSlice, ","))
-
+	`, testEnv("TF_PROV_NAME"), testEnv("TF_USERNAME"), "foobarboz", testEnv("TF_AUTH_URL"),
+		testEnv("TF_TOK_URL"), testEnv("TF_CLIENT_ID"), testEnv("TF_CLIENT_SECRET"), testEnv("TF_VM_API_URL"),
+		testEnv("TF_PLAYER_API_URL"))
 	return ret
 }
 
 func getViewResource(key string, file *map[string]interface{}) string {
-	resource := (*file)[key].(map[string]interface{})
+	resource := util.As[map[string]interface{}]((*file)[key])
 	if resource == nil {
 		panic("key not found in file")
 	}
@@ -533,41 +521,41 @@ func getViewResource(key string, file *map[string]interface{}) string {
 		name = "%s"
 		description = "%s"
 		status = "%s"
-		`, resource["provider_name"].(string), resource["resourceName"].(string), resource["name"].(string),
-		resource["description"].(string), resource["status"].(string))
+		`, util.As[string](resource["provider_name"]), util.As[string](resource["resourceName"]), util.As[string](resource["name"]),
+		util.As[string](resource["description"]), util.As[string](resource["status"]))
 
 	// Consider applications
 	if apps, ok := resource["applications"]; ok {
-		appList := apps.([]interface{})
+		appList := util.As[[]interface{}](apps)
 
 		for _, app := range appList {
-			asMap := app.(map[string]interface{})
+			asMap := util.As[map[string]interface{}](app)
 
 			// Handle optional arguments
 			var url string
 			if asMap["url"] != nil {
-				url = "\"" + asMap["url"].(string) + "\""
+				url = "\"" + util.As[string](asMap["url"]) + "\""
 			} else {
 				url = "null"
 			}
 
 			var icon string
 			if asMap["icon"] != nil {
-				icon = "\"" + asMap["icon"].(string) + "\""
+				icon = "\"" + util.As[string](asMap["icon"]) + "\""
 			} else {
 				icon = "null"
 			}
 
 			var embeddable string
 			if asMap["embeddable"] != nil {
-				embeddable = "\"" + asMap["embeddable"].(string) + "\""
+				embeddable = "\"" + util.As[string](asMap["embeddable"]) + "\""
 			} else {
 				embeddable = "null"
 			}
 
 			var load_in_background string
 			if asMap["load_in_background"] != nil {
-				load_in_background = "\"" + asMap["load_in_background"].(string) + "\""
+				load_in_background = "\"" + util.As[string](asMap["load_in_background"]) + "\""
 			} else {
 				load_in_background = "null"
 			}
@@ -580,30 +568,30 @@ func getViewResource(key string, file *map[string]interface{}) string {
 				embeddable = %s
 				load_in_background = %s
 				}
-				`, asMap["name"].(string), url, icon, embeddable, load_in_background)
+				`, util.As[string](asMap["name"]), url, icon, embeddable, load_in_background)
 			view += curr
 		}
 		// Consider teams
 		if teams, ok := resource["teams"]; ok {
-			teamList := teams.([]interface{})
+			teamList := util.As[[]interface{}](teams)
 			for _, team := range teamList {
-				asMap := team.(map[string]interface{})
+				asMap := util.As[map[string]interface{}](team)
 
 				var name string
 				if asMap["name"] != nil {
-					name = "\"" + asMap["name"].(string) + "\""
+					name = "\"" + util.As[string](asMap["name"]) + "\""
 				} else {
 					name = "null"
 				}
 
 				var role string
 				if asMap["role"] != nil {
-					role = "\"" + asMap["role"].(string) + "\""
+					role = "\"" + util.As[string](asMap["role"]) + "\""
 				} else {
 					role = "null"
 				}
 
-				permissions := asMap["permissions"].([]interface{})
+				permissions := util.As[[]interface{}](asMap["permissions"])
 				permissionsStr := util.ToStringSlice(&permissions)
 				for i, entry := range *permissionsStr {
 					(*permissionsStr)[i] = "\"" + entry + "\""
@@ -618,13 +606,13 @@ func getViewResource(key string, file *map[string]interface{}) string {
 
 				// Handle users
 				if asMap["users"] != nil {
-					users := asMap["users"].([]interface{})
+					users := util.As[[]interface{}](asMap["users"])
 					for _, user := range users {
-						userMap := user.(map[string]interface{})
+						userMap := util.As[map[string]interface{}](user)
 
 						var userRole string
 						if userMap["role"] != nil {
-							userRole = "\"" + userMap["role"].(string) + "\""
+							userRole = "\"" + util.As[string](userMap["role"]) + "\""
 						} else {
 							userRole = "null"
 						}
@@ -641,13 +629,13 @@ func getViewResource(key string, file *map[string]interface{}) string {
 
 				// Handle app instances
 				if asMap["app_instances"] != nil {
-					instances := asMap["app_instances"].([]interface{})
+					instances := util.As[[]interface{}](asMap["app_instances"])
 					for _, inst := range instances {
-						instMap := inst.(map[string]interface{})
+						instMap := util.As[map[string]interface{}](inst)
 
 						var display string
 						if instMap["display_order"] != nil {
-							display = strconv.FormatFloat(instMap["display_order"].(float64), 'f', 0, 64)
+							display = strconv.FormatFloat(util.As[float64](instMap["display_order"]), 'f', 0, 64)
 						} else {
 							display = "null"
 						}
@@ -670,7 +658,7 @@ func getViewResource(key string, file *map[string]interface{}) string {
 }
 
 func getTemplateResource(key string, file *map[string]interface{}) string {
-	resource := (*file)[key].(map[string]interface{})
+	resource := util.As[map[string]interface{}]((*file)[key])
 
 	return fmt.Sprintf(`resource "%s" "%s" {
 		name = "%s"
@@ -683,17 +671,67 @@ func getTemplateResource(key string, file *map[string]interface{}) string {
 		resource["embeddable"], resource["load_in_background"])
 }
 
+// testEnvDefaults maps each TF_* test variable to the value used by the default
+// crucible-development Aspire stack. Tests read these through testEnv(), so the
+// acceptance suite runs out of the box against a local stack while any value can
+// still be overridden by exporting the corresponding environment variable.
+//
+// TF_TEST_PROJECT_ID (the Caster project for crucible_vlan) has no stable dev
+// default and is intentionally absent — that test skips until it is supplied.
+var testEnvDefaults = map[string]string{
+	"TF_PROV_NAME":      "crucible",
+	"TF_USERNAME":       "admin",
+	"TF_PASSWORD":       "admin",
+	"TF_AUTH_URL":       "https://localhost:8443/realms/crucible/protocol/openid-connect/auth",
+	"TF_TOK_URL":        "https://localhost:8443/realms/crucible/protocol/openid-connect/token",
+	"TF_CLIENT_ID":      "crucible.provider",
+	"TF_CLIENT_SECRET":  "", // crucible.provider is a public client
+	"TF_PLAYER_API_URL": "http://localhost:4300/api",
+	"TF_VM_API_URL":     "http://localhost:4302/api",
+	"TF_CASTER_API_URL": "http://localhost:4309/api",
+	// A dedicated, test-only user GUID. Player does not validate the id against
+	// Keycloak, so the acceptance test can create and destroy it freely. (We do
+	// NOT reuse the seeded admin GUID here — creating it 500s because it already
+	// exists, and destroying it would remove the seeded admin.)
+	"TF_TEST_USER_ID": "f1a9b2c3-0000-4d5e-8f60-acc7e57e0001",
+	// The user_id stamped on the VM acceptance tests' VMs. Player's VM API stores
+	// user_id free-form (no FK validation against Keycloak), so any fixed UUID
+	// round-trips; a stable value keeps ImportStateVerify deterministic. Override
+	// only to target a real user.
+	"TF_TEST_VM_USER_ID": "8694c78c-1c49-421b-8ed8-689b46834878",
+}
+
+// testEnv returns the exported environment variable when set, otherwise the
+// crucible-development default from testEnvDefaults (or "" if there is none).
+func testEnv(key string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return testEnvDefaults[key]
+}
+
+// envOrDefault returns the environment variable value or the provided fallback
+// when unset. Used for test values that have no entry in testEnvDefaults.
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
 func getMap() map[string]string {
 	// Set up the authentication info
 	m := make(map[string]string)
-	m["username"] = os.Getenv("TF_USERNAME")
-	m["password"] = os.Getenv("TF_PASSWORD")
-	m["auth_url"] = os.Getenv("TF_AUTH_URL")
-	m["token_url"] = os.Getenv("TF_TOK_URL")
-	m["client_id"] = os.Getenv("TF_CLIENT_ID")
-	m["client_secret"] = os.Getenv("TF_CLIENT_SECRET")
-	m["vm_api_url"] = os.Getenv("TF_VM_API_URL")
-	m["player_api_url"] = os.Getenv("TF_PLAYER_API_URL")
+	m["username"] = testEnv("TF_USERNAME")
+	m["password"] = testEnv("TF_PASSWORD")
+	m["auth_url"] = testEnv("TF_AUTH_URL")
+	// The OAuth2 config reads the token URL under the "player_token_url" key.
+	m["player_token_url"] = testEnv("TF_TOK_URL")
+	m["client_id"] = testEnv("TF_CLIENT_ID")
+	m["client_secret"] = testEnv("TF_CLIENT_SECRET")
+	m["vm_api_url"] = testEnv("TF_VM_API_URL")
+	m["player_api_url"] = testEnv("TF_PLAYER_API_URL")
+	m["caster_api_url"] = testEnv("TF_CASTER_API_URL")
 
 	return m
 }

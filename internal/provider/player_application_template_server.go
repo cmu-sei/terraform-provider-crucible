@@ -4,207 +4,241 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"log"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func applicationTemplate() *schema.Resource {
-	return &schema.Resource{
-		Create: applicationTemplateCreate,
-		Read:   applicationTemplateRead,
-		Update: applicationTemplateUpdate,
-		Delete: applicationTemplateDelete,
+var (
+	_ resource.Resource                = &applicationTemplateResource{}
+	_ resource.ResourceWithConfigure   = &applicationTemplateResource{}
+	_ resource.ResourceWithImportState = &applicationTemplateResource{}
+)
 
-		Schema: map[string]*schema.Schema{
-			"name": {
-				Type:     schema.TypeString,
+// applicationTemplateResource is the resource implementation for
+// crucible_player_application_template.
+type applicationTemplateResource struct {
+	cfg map[string]string
+}
+
+type applicationTemplateModel struct {
+	ID               types.String `tfsdk:"id"`
+	Name             types.String `tfsdk:"name"`
+	URL              types.String `tfsdk:"url"`
+	Icon             types.String `tfsdk:"icon"`
+	Embeddable       types.Bool   `tfsdk:"embeddable"`
+	LoadInBackground types.Bool   `tfsdk:"load_in_background"`
+}
+
+// NewApplicationTemplateResource is a helper to instantiate the resource.
+func NewApplicationTemplateResource() resource.Resource {
+	return &applicationTemplateResource{}
+}
+
+func (r *applicationTemplateResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_player_application_template"
+}
+
+func (r *applicationTemplateResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+	cfg, ok := req.ProviderData.(map[string]string)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Provider Configuration Type",
+			fmt.Sprintf("Expected map[string]string, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+		return
+	}
+	r.cfg = cfg
+}
+
+func (r *applicationTemplateResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"name": schema.StringAttribute{
 				Required: true,
 			},
-			"url": {
-				Type:     schema.TypeString,
+			// These attributes are Optional+Computed: the API echoes them back
+			// (defaulting empty/false), so the provider must be allowed to set
+			// them even when the configuration omits them. UseStateForUnknown
+			// carries the prior value forward on update so an unrelated change
+			// does not re-plan them as "known after apply".
+			"url": schema.StringAttribute{
 				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
-			"icon": {
-				Type:     schema.TypeString,
+			"icon": schema.StringAttribute{
 				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
-			"embeddable": {
-				Type:     schema.TypeBool,
+			"embeddable": schema.BoolAttribute{
 				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
-			"load_in_background": {
-				Type:     schema.TypeBool,
+			"load_in_background": schema.BoolAttribute{
 				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
 }
 
-// get properties from d
-// call API
-// set local state
-// call read
-func applicationTemplateCreate(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *applicationTemplateResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan applicationTemplateModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	template := &structs.AppTemplate{
-		Name:             d.Get("name").(string),
-		URL:              d.Get("url").(string),
-		Icon:             d.Get("icon").(string),
-		Embeddable:       d.Get("embeddable").(bool),
-		LoadInBackground: d.Get("load_in_background").(bool),
+		Name:             plan.Name.ValueString(),
+		URL:              plan.URL.ValueString(),
+		Icon:             plan.Icon.ValueString(),
+		Embeddable:       plan.Embeddable.ValueBool(),
+		LoadInBackground: plan.LoadInBackground.ValueBool(),
 	}
 
-	log.Printf("! In template create, template is %+v", template)
-
-	casted := m.(map[string]string)
-	id, err := api.CreateAppTemplate(template, casted)
+	id, err := api.CreateAppTemplate(template, r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error creating application template", err.Error())
+		return
 	}
 
-	d.SetId(id)
-	err = d.Set("name", template.Name)
-	if err != nil {
-		return err
-	}
-	err = d.Set("url", template.URL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("icon", template.Icon)
-	if err != nil {
-		return err
-	}
-	err = d.Set("embeddable", template.Embeddable)
-	if err != nil {
-		return err
-	}
-	err = d.Set("load_in_background", template.LoadInBackground)
-	if err != nil {
-		return err
+	plan.ID = types.StringValue(id)
+
+	resp.Diagnostics.Append(r.read(&plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	return applicationTemplateRead(d, m)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-// Check if resource exists
-// If yes, call API to get remote state
-// Use it to set local state
-func applicationTemplateRead(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *applicationTemplateResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state applicationTemplateModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	casted := m.(map[string]string)
-
-	exists, err := api.AppTemplateExists(d.Id(), casted)
+	exists, err := api.AppTemplateExists(state.ID.ValueString(), r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error checking application template existence", err.Error())
+		return
 	}
 	if !exists {
-		d.SetId("")
-		return nil
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
-	template, err := api.AppTemplateRead(d.Id(), casted)
-	if err != nil {
-		return err
+	resp.Diagnostics.Append(r.read(&state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	err = d.Set("name", template.Name)
-	if err != nil {
-		return err
-	}
-	err = d.Set("url", template.URL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("icon", template.Icon)
-	if err != nil {
-		return err
-	}
-	err = d.Set("embeddable", template.Embeddable)
-	if err != nil {
-		return err
-	}
-	err = d.Set("load_in_background", template.LoadInBackground)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Get state from d
-// Use it to call API update function
-func applicationTemplateUpdate(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *applicationTemplateResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan applicationTemplateModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	template := &structs.AppTemplate{
-		Name:             d.Get("name").(string),
-		URL:              d.Get("url").(string),
-		Icon:             d.Get("icon").(string),
-		Embeddable:       d.Get("embeddable").(bool),
-		LoadInBackground: d.Get("load_in_background").(bool),
+		Name:             plan.Name.ValueString(),
+		URL:              plan.URL.ValueString(),
+		Icon:             plan.Icon.ValueString(),
+		Embeddable:       plan.Embeddable.ValueBool(),
+		LoadInBackground: plan.LoadInBackground.ValueBool(),
 	}
 
-	casted := m.(map[string]string)
-	err := api.AppTemplateUpdate(d.Id(), template, casted)
-	if err != nil {
-		return err
+	if err := api.AppTemplateUpdate(plan.ID.ValueString(), template, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error updating application template", err.Error())
+		return
 	}
 
-	err = d.Set("name", template.Name)
-	if err != nil {
-		return err
-	}
-	err = d.Set("url", template.URL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("icon", template.Icon)
-	if err != nil {
-		return err
-	}
-	err = d.Set("embeddable", template.Embeddable)
-	if err != nil {
-		return err
-	}
-	err = d.Set("load_in_background", template.LoadInBackground)
-	if err != nil {
-		return err
+	resp.Diagnostics.Append(r.read(&plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	return applicationTemplateRead(d, m)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-// Check if template exists
-// Call API to delete it
-func applicationTemplateDelete(d *schema.ResourceData, m interface{}) error {
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *applicationTemplateResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state applicationTemplateModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	id := d.Id()
-	casted := m.(map[string]string)
-	exists, err := api.AppTemplateExists(id, casted)
-
+	id := state.ID.ValueString()
+	exists, err := api.AppTemplateExists(id, r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error checking application template existence", err.Error())
+		return
 	}
-
 	if !exists {
-		return nil
+		return
 	}
 
-	return api.DeleteAppTemplate(id, casted)
+	if err := api.DeleteAppTemplate(id, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error deleting application template", err.Error())
+	}
+}
+
+func (r *applicationTemplateResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// read refreshes the model from the API.
+func (r *applicationTemplateResource) read(m *applicationTemplateModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	template, err := api.AppTemplateRead(m.ID.ValueString(), r.cfg)
+	if err != nil {
+		diags.AddError("Error reading application template", err.Error())
+		return diags
+	}
+
+	m.Name = types.StringValue(template.Name)
+	m.URL = types.StringValue(template.URL)
+	m.Icon = types.StringValue(template.Icon)
+	m.Embeddable = types.BoolValue(template.Embeddable)
+	m.LoadInBackground = types.BoolValue(template.LoadInBackground)
+
+	return diags
 }

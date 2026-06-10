@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 )
 
 // Structs used throughout provider
 
-// VMInfo used as the payload for VM creation and as the return value for VM retrieval
+// VMInfo used as the payload for VM creation and as the return value for VM retrieval.
 type VMInfo struct {
 	ID         string
 	URL        string
@@ -27,7 +28,7 @@ type VMInfo struct {
 	Proxmox    *ProxmoxInfo       `json:"proxmoxVmInfo"`         // Use a pointer so this can be set to nil
 }
 
-// ConsoleConnection represents a console connection info block
+// ConsoleConnection represents a console connection info block.
 type ConsoleConnection struct {
 	Hostname string
 	Port     string
@@ -36,14 +37,14 @@ type ConsoleConnection struct {
 	Password string
 }
 
-// ConnectionFromMap creates a ConsoleConnection object from an equivalent map
+// ConnectionFromMap creates a ConsoleConnection object from an equivalent map.
 func ConnectionFromMap(m map[string]interface{}) *ConsoleConnection {
 	return &ConsoleConnection{
-		Hostname: m["hostname"].(string),
-		Port:     m["port"].(string),
-		Protocol: m["protocol"].(string),
-		Username: m["username"].(string),
-		Password: m["password"].(string),
+		Hostname: util.As[string](m["hostname"]),
+		Port:     util.As[string](m["port"]),
+		Protocol: util.As[string](m["protocol"]),
+		Username: util.As[string](m["username"]),
+		Password: util.As[string](m["password"]),
 	}
 }
 
@@ -58,24 +59,24 @@ func (conn ConsoleConnection) ToMap() map[string]interface{} {
 	}
 }
 
-// ProxmoxInfo represents a proxmox vm info block
+// ProxmoxInfo represents a proxmox vm info block.
 type ProxmoxInfo struct {
 	Id   int
 	Node string
 	Type string
 }
 
-// ProxmoxInfoFromMap creates a ProxmoxInfo object from an equivalent map
+// ProxmoxInfoFromMap creates a ProxmoxInfo object from an equivalent map.
 func ProxmoxInfoFromMap(m map[string]interface{}) *ProxmoxInfo {
 	// Id is an int in the API, but proxmox provider gives it in the form {node}/{type}/{id}
 	// Check if an int is given directly, or try to parse id from provider id string
 	var intId int
 	id := m["id"]
 
-	switch id.(type) {
+	switch id := id.(type) {
 	case string:
 		var err error
-		strId := id.(string)
+		strId := id
 		intId, err = strconv.Atoi(strId)
 
 		if err != nil {
@@ -88,13 +89,20 @@ func ProxmoxInfoFromMap(m map[string]interface{}) *ProxmoxInfo {
 		}
 	default:
 		// float64 is default JSON unmarshalled number type
-		intId = int(id.(float64))
+		intId = int(util.As[float64](id))
+	}
+
+	// The API represents the Proxmox id as a 32-bit integer, so a value outside
+	// that range cannot be a valid VMID. Reject it rather than let it silently
+	// truncate/wrap when converted to int32 downstream.
+	if intId > math.MaxInt32 || intId < math.MinInt32 {
+		return nil
 	}
 
 	return &ProxmoxInfo{
 		Id:   intId,
-		Node: m["node"].(string),
-		Type: m["type"].(string),
+		Node: util.As[string](m["node"]),
+		Type: util.As[string](m["type"]),
 	}
 }
 
@@ -107,7 +115,7 @@ func (proxmox ProxmoxInfo) ToMap() map[string]interface{} {
 	}
 }
 
-// ViewInfo used as payload for view creation and return value for view retrieval
+// ViewInfo used as payload for view creation and return value for view retrieval.
 type ViewInfo struct {
 	Name            string
 	Description     string
@@ -119,7 +127,7 @@ type ViewInfo struct {
 
 // ToMap converts a ViewInfo struct to a map
 //
-// Ignore the apps and teams field here b/c it's only used to call API
+// Ignore the apps and teams field here b/c it's only used to call API.
 func (view *ViewInfo) ToMap() map[string]interface{} {
 	ret := make(map[string]interface{}, 1)
 	ret["name"] = view.Name
@@ -132,7 +140,7 @@ func (view *ViewInfo) ToMap() map[string]interface{} {
 // AppInfo used as payload for application creation and return value for application retrieval
 //
 // Fields who's type is interface{} are optional. Interface{} is nullable but string is not, so we need to use
-// interface{} to pass null values to the API
+// interface{} to pass null values to the API.
 type AppInfo struct {
 	ID               string
 	Name             interface{}
@@ -144,23 +152,23 @@ type AppInfo struct {
 	AppTemplateID    interface{} `json:"applicationTemplateId"`
 }
 
-// AppInfoFromMap returns an AppInfo struct read from a map object
+// AppInfoFromMap returns an AppInfo struct read from a map object.
 func AppInfoFromMap(asMap map[string]interface{}) *AppInfo {
 	return &AppInfo{
 		// Required fields
-		ID:     asMap["app_id"].(string),
-		ViewID: asMap["v_id"].(string),
+		ID:     util.As[string](asMap["app_id"]),
+		ViewID: util.As[string](asMap["v_id"]),
 		// Everything else is optional and can thus be nil
-		Name:             util.Ternary(asMap["name"].(string) == "", nil, asMap["name"]),
-		URL:              util.Ternary(asMap["url"].(string) == "", nil, asMap["url"]),
-		Icon:             util.Ternary(asMap["icon"].(string) == "", nil, asMap["icon"]),
-		Embeddable:       util.Ternary(asMap["embeddable"].(string) == "", nil, strings.ReplaceAll(asMap["embeddable"].(string), `"`, "")),
-		LoadInBackground: util.Ternary(asMap["load_in_background"].(string) == "", nil, strings.ReplaceAll(asMap["load_in_background"].(string), `"`, "")),
-		AppTemplateID:    util.Ternary(asMap["app_template_id"].(string) == "", nil, asMap["app_template_id"]),
+		Name:             util.Ternary(util.As[string](asMap["name"]) == "", nil, asMap["name"]),
+		URL:              util.Ternary(util.As[string](asMap["url"]) == "", nil, asMap["url"]),
+		Icon:             util.Ternary(util.As[string](asMap["icon"]) == "", nil, asMap["icon"]),
+		Embeddable:       util.Ternary(util.As[string](asMap["embeddable"]) == "", nil, strings.ReplaceAll(util.As[string](asMap["embeddable"]), `"`, "")),
+		LoadInBackground: util.Ternary(util.As[string](asMap["load_in_background"]) == "", nil, strings.ReplaceAll(util.As[string](asMap["load_in_background"]), `"`, "")),
+		AppTemplateID:    util.Ternary(util.As[string](asMap["app_template_id"]) == "", nil, asMap["app_template_id"]),
 	}
 }
 
-// ToMap converts an appInfo struct to an equivalent map
+// ToMap converts an appInfo struct to an equivalent map.
 func (app *AppInfo) ToMap() map[string]interface{} {
 	ret := make(map[string]interface{})
 
@@ -172,9 +180,9 @@ func (app *AppInfo) ToMap() map[string]interface{} {
 	if app.Embeddable == nil {
 		embed = ""
 	} else if t == "string" {
-		embed = app.Embeddable.(string)
+		embed = util.As[string](app.Embeddable)
 	} else {
-		embed = strconv.FormatBool(app.Embeddable.(bool))
+		embed = strconv.FormatBool(util.As[bool](app.Embeddable))
 	}
 
 	t = fmt.Sprintf("%T", app.LoadInBackground)
@@ -182,9 +190,9 @@ func (app *AppInfo) ToMap() map[string]interface{} {
 	if app.LoadInBackground == nil {
 		load = ""
 	} else if t == "string" {
-		load = app.LoadInBackground.(string)
+		load = util.As[string](app.LoadInBackground)
 	} else {
-		load = strconv.FormatBool(app.LoadInBackground.(bool))
+		load = strconv.FormatBool(util.As[bool](app.LoadInBackground))
 	}
 
 	ret["app_id"] = app.ID
@@ -200,7 +208,7 @@ func (app *AppInfo) ToMap() map[string]interface{} {
 	return ret
 }
 
-// TeamInfo holds information about a team within a view. Used to create, read, and update teams within views
+// TeamInfo holds information about a team within a view. Used to create, read, and update teams within views.
 type TeamInfo struct {
 	ID           interface{}
 	Name         interface{}
@@ -210,7 +218,7 @@ type TeamInfo struct {
 	AppInstances []AppInstance
 }
 
-// TeamInfoFromMap returns a TeamInfo struct from a map object
+// TeamInfoFromMap returns a TeamInfo struct from a map object.
 func TeamInfoFromMap(asMap map[string]interface{}) *TeamInfo {
 	users := userInfoFromMap(asMap)
 	if len(users) == 0 {
@@ -222,7 +230,7 @@ func TeamInfoFromMap(asMap map[string]interface{}) *TeamInfo {
 		apps = nil
 	}
 
-	permissions := asMap["permissions"].([]interface{})
+	permissions := util.As[[]interface{}](asMap["permissions"])
 	strPermissions := util.ToStringSlice(&permissions)
 
 	return &TeamInfo{
@@ -235,7 +243,7 @@ func TeamInfoFromMap(asMap map[string]interface{}) *TeamInfo {
 	}
 }
 
-// ToMap converts a TeamInfo struct into an equivalent map
+// ToMap converts a TeamInfo struct into an equivalent map.
 func (team *TeamInfo) ToMap() map[string]interface{} {
 	ret := make(map[string]interface{})
 
@@ -269,32 +277,32 @@ func (team *TeamInfo) ToMap() map[string]interface{} {
 // UserInfo holds information about a user within a team. See PlayerUser for the representation of a
 // user in general.
 //
-// ID is required, RoleID is optional
+// ID is required, RoleID is optional.
 type UserInfo struct {
 	ID   string
 	Role interface{}
 }
 
-// Returns the list of structs representing the users in a team
+// Returns the list of structs representing the users in a team.
 func userInfoFromMap(asMap map[string]interface{}) []UserInfo {
 	if asMap["user"] == nil {
 		return nil
 	}
-	list := asMap["user"].([]interface{})
+	list := util.As[[]interface{}](asMap["user"])
 	ret := new([]UserInfo)
 
 	for _, user := range list {
-		userMap := user.(map[string]interface{})
+		userMap := util.As[map[string]interface{}](user)
 
 		*ret = append(*ret, UserInfo{
-			ID:   userMap["user_id"].(string),
+			ID:   util.As[string](userMap["user_id"]),
 			Role: userMap["role"],
 		})
 	}
 	return *ret
 }
 
-// ToMap returns a map created from a userInfo struct
+// ToMap returns a map created from a userInfo struct.
 func (user *UserInfo) ToMap() map[string]interface{} {
 	ret := make(map[string]interface{})
 	ret["user_id"] = user.ID
@@ -304,7 +312,7 @@ func (user *UserInfo) ToMap() map[string]interface{} {
 
 // UserHasID takes a slice of userInfo structs and returns true if any of them
 // have the specified ID. We can't just make a array contains function
-// because Go doesn't have generics
+// because Go doesn't have generics.
 func UserHasID(arr []UserInfo, id string) bool {
 	for _, user := range arr {
 		if user.ID == id {
@@ -314,7 +322,7 @@ func UserHasID(arr []UserInfo, id string) bool {
 	return false
 }
 
-// AppTemplate holds the information needed for CRUD operations on an ApplicationTemplate resource
+// AppTemplate holds the information needed for CRUD operations on an ApplicationTemplate resource.
 type AppTemplate struct {
 	Name             string
 	URL              string
@@ -323,7 +331,7 @@ type AppTemplate struct {
 	LoadInBackground bool
 }
 
-// AppInstance holds the info needed to manage application instances
+// AppInstance holds the info needed to manage application instances.
 type AppInstance struct {
 	Name         string
 	ID           string
@@ -331,21 +339,21 @@ type AppInstance struct {
 	Parent       string  `json:"applicationId"`
 }
 
-// AppInstanceFromMap creates an app instance object from a map
+// AppInstanceFromMap creates an app instance object from a map.
 func AppInstanceFromMap(asMap map[string]interface{}) []AppInstance {
 	if asMap["app_instance"] == nil {
 		return nil
 	}
 
-	list := asMap["app_instance"].([]interface{})
+	list := util.As[[]interface{}](asMap["app_instance"])
 	ret := new([]AppInstance)
 
 	for _, app := range list {
-		m := app.(map[string]interface{})
+		m := util.As[map[string]interface{}](app)
 
 		var order float64
 		if _, ok := m["display_order"]; ok {
-			order = m["display_order"].(float64)
+			order = util.As[float64](m["display_order"])
 		} else {
 			order = 0
 		}
@@ -353,15 +361,15 @@ func AppInstanceFromMap(asMap map[string]interface{}) []AppInstance {
 		log.Printf("! Reading app instance from map. Display order is %v", order)
 
 		*ret = append(*ret, AppInstance{
-			Name:         m["name"].(string),
+			Name:         util.As[string](m["name"]),
 			DisplayOrder: order,
-			ID:           m["id"].(string),
+			ID:           util.As[string](m["id"]),
 		})
 	}
 	return *ret
 }
 
-// ToMap returns a map representation of an AppInstance struct
+// ToMap returns a map representation of an AppInstance struct.
 func (instance *AppInstance) ToMap() map[string]interface{} {
 	return map[string]interface{}{
 		"name":          instance.Name,
@@ -405,7 +413,7 @@ type VlanCreateCommand struct {
 	VlanId      sql.NullInt32
 }
 
-// ViewNetworkInfo holds information about a network entry within a view
+// ViewNetworkInfo holds information about a network entry within a view.
 type ViewNetworkInfo struct {
 	ID                 string
 	ViewID             string

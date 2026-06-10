@@ -6,10 +6,81 @@ tasks:
     cmds:
       - go build .
 
-  test:
-    desc: Run provider tests
+  gen-vm-client:
+    desc: >-
+      Regenerate the typed Player VM API client (internal/vmclient) from a
+      running VM API's OpenAPI spec. Requires a live VM API; override
+      VM_SWAGGER_URL to point elsewhere. The fetched spec and generated client
+      are committed so ordinary builds need no stack.
+    vars:
+      VM_SWAGGER_URL: '{{.VM_SWAGGER_URL | default "http://localhost:4302/swagger/v1/swagger.json"}}'
+    dir: internal/vmclient
     cmds:
-      - go test -v ./internal/provider/...
+      - curl -sk "{{.VM_SWAGGER_URL}}" -o openapi.json
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
+
+  gen-caster-client:
+    desc: >-
+      Regenerate the typed Caster API client (internal/casterclient) from a
+      running Caster API's OpenAPI spec. Requires a live Caster API; override
+      CASTER_SWAGGER_URL to point elsewhere. The fetched spec and generated client
+      are committed so ordinary builds need no stack.
+    vars:
+      CASTER_SWAGGER_URL: '{{.CASTER_SWAGGER_URL | default "http://localhost:4309/swagger/v1/swagger.json"}}'
+    dir: internal/casterclient
+    cmds:
+      - curl -sk "{{.CASTER_SWAGGER_URL}}" -o openapi.json
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
+
+  gen-player-client:
+    desc: >-
+      Regenerate the typed Player API client (internal/playerclient) from a
+      running Player API's OpenAPI spec. Requires a live Player API; override
+      PLAYER_SWAGGER_URL to point elsewhere. The fetched spec and generated client
+      are committed so ordinary builds need no stack.
+    vars:
+      PLAYER_SWAGGER_URL: '{{.PLAYER_SWAGGER_URL | default "http://localhost:4300/swagger/v1/swagger.json"}}'
+    dir: internal/playerclient
+    cmds:
+      - curl -sk "{{.PLAYER_SWAGGER_URL}}" -o openapi.json
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config oapi-codegen.yaml openapi.json
+
+  test:
+    desc: Run offline unit tests (no live stack). Acceptance steps self-skip without TF_ACC.
+    cmds:
+      # gotestsum streams per-test results and prints a clean summary; flags after
+      # `--` pass through to `go test`.
+      - go run gotest.tools/gotestsum --format testname -- ./...
+
+  testacc:
+    desc: >-
+      Run the full test suite (unit + acceptance) against a live Crucible stack
+      (sets TF_ACC=1). Defaults target the local crucible-development Aspire stack;
+      see README (### Running tests) for the overridable TF_* variables.
+    env:
+      TF_ACC: "1"
+      # Cache provider downloads (the upgrade tests pull the old cmu-sei/crucible
+      # v2.5.0 provider from the registry) so it's fetched once and reused across
+      # runs instead of re-downloaded each time. Repo-local + gitignored.
+      #
+      # Must be ABSOLUTE: terraform-plugin-testing runs the terraform CLI in a
+      # per-test temp working directory, and terraform resolves a relative
+      # TF_PLUGIN_CACHE_DIR against that cwd — so a relative path silently breaks
+      # the cache ("plugin cache dir cannot be opened") and re-downloads every
+      # init. {{.ROOT_DIR}} is the Taskfile's directory, injected by Task.
+      TF_PLUGIN_CACHE_DIR: '{{.TF_PLUGIN_CACHE_DIR | default (printf "%s/.plugin-cache" .ROOT_DIR)}}'
+    cmds:
+      # Ensure the cache dir exists (terraform errors if TF_PLUGIN_CACHE_DIR is set
+      # but missing).
+      - mkdir -p "{{.TF_PLUGIN_CACHE_DIR | default (printf "%s/.plugin-cache" .ROOT_DIR)}}"
+      # gotestsum streams per-test results as they finish (the standard `go test`
+      # multi-package runner buffers each package's output until it completes, so
+      # the long-running provider package looks like it's hanging). Flags after
+      # `--` pass through to `go test`:
+      #   -count=1   disables Go's test result cache so the live API is hit every
+      #              run (otherwise an unchanged build prints a cached "ok").
+      #   -timeout   bounds the full live suite.
+      - go run gotest.tools/gotestsum --format testname -- -count=1 -timeout 60m ./...
 
   clean:
     desc: Remove build artifacts
@@ -25,6 +96,11 @@ tasks:
     desc: Run go vet
     cmds:
       - go vet ./...
+
+  lint:
+    desc: Run golangci-lint (expects golangci-lint v2 on PATH; CI pins the version)
+    cmds:
+      - golangci-lint run ./...
 
   tidy:
     desc: Tidy module dependencies
@@ -56,9 +132,10 @@ tasks:
       - echo "Removed provider override and binary."
 
   ci:
-    desc: Run all checks (tidy, fmt, vet, test)
+    desc: Run all checks (tidy, fmt, vet, lint, test)
     cmds:
       - task: tidy
       - task: fmt
       - task: vet
+      - task: lint
       - task: test

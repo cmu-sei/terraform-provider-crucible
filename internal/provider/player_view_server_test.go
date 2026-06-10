@@ -5,18 +5,21 @@ package provider_test
 
 import (
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/provider"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 // Test case for creation and updating of an empty view. That is, one without any teams or applications inside of it
@@ -29,16 +32,17 @@ import (
 // 5. Terraform destroys the resource
 
 // Expected behavior:
-// The resource is created, updated, and destroyed without error
+// The resource is created, updated, and destroyed without error.
 func TestAccEmptyView(t *testing.T) {
+	sweepViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
 				// Create resource and check
-				Config: configViewEmpty,
+				Config: tfConfig(configViewEmpty),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.empty", emptyViewExpected),
 					testAccVerifyRemoteView(emptyViewExpected),
@@ -46,7 +50,7 @@ func TestAccEmptyView(t *testing.T) {
 			},
 			{
 				// Update resource and check
-				Config: configViewEmptyUpdated,
+				Config: tfConfig(configViewEmptyUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.empty", emptyViewExpectedUpdated),
 					testAccVerifyRemoteView(&structs.ViewInfo{
@@ -55,6 +59,41 @@ func TestAccEmptyView(t *testing.T) {
 						Status:      "Active",
 					}),
 				),
+			},
+			{
+				// Import an empty view by id and confirm it succeeds. Nested
+				// blocks carry computed ids, so a full ImportStateVerify is left
+				// to per-attribute checks above; this exercises the import path.
+				ResourceName:      "crucible_player_view.empty",
+				ImportState:       true,
+				ImportStateVerify: false,
+			},
+		},
+	})
+}
+
+// TestAccIncorrectCreds verifies the provider surfaces an authentication failure
+// when configured with a bad password. The provider does not fetch a token at
+// Configure time — it stashes the credentials and the OAuth2 password grant runs
+// lazily on the first API call — so the failure appears when the view create
+// issues its first Player request, not at provider-config time. A real resource is
+// therefore required to trigger it (mirroring TestAccVMBasicFail). The create fails
+// before any view exists, so no cleanup/CheckDestroy is needed.
+func TestAccIncorrectCreds(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfigBadCreds(configViewEmpty),
+				// The OAuth2 password grant fails at the IDP before any Player
+				// request is sent, surfacing as
+				//   oauth2: "invalid_grant" "<idp message>"
+				// on the first API call (the view create). invalid_grant is the
+				// RFC 6749 error code (a stable protocol constant); match on it
+				// rather than any one IDP's freeform message wording. (ExpectError
+				// only matches the error string — there is no Player HTTP status to
+				// assert on here, since the failure is in the token exchange.)
+				ExpectError: regexp.MustCompile(`invalid_grant`),
 			},
 		},
 	})
@@ -65,22 +104,23 @@ func TestAccEmptyView(t *testing.T) {
 // Execution steps: Same as above, there's just applications inside the view now
 //
 // Expected behavior:
-// The resource is created, updated, and destroyed without error
+// The resource is created, updated, and destroyed without error.
 func TestAccViewWithApps(t *testing.T) {
+	sweepViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: configViewApps,
+				Config: tfConfig(configViewApps),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.apps", appsViewExpected),
 					testAccVerifyRemoteView(appsViewExpected),
 				),
 			},
 			{
-				Config: configViewAppsUpdated,
+				Config: tfConfig(configViewAppsUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.apps", appsViewExpectedUpdated),
 					testAccVerifyRemoteView(appsViewExpectedUpdated),
@@ -95,24 +135,38 @@ func TestAccViewWithApps(t *testing.T) {
 // Execution steps: Same as above
 //
 // Expected behavior:
-// The resource is created, updated, and destroyed without error
+// The resource is created, updated, and destroyed without error.
 func TestAccViewWithTeams(t *testing.T) {
+	sweepViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: configViewTeams,
+				Config: tfConfig(configViewTeams),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.teams", teamViewExpected),
 					testAccVerifyRemoteView(teamViewExpected)),
 			},
 			{
-				Config: configViewTeamsUpdated,
+				Config: tfConfig(configViewTeamsUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.teams", teamViewExpectedUpdated),
 					testAccVerifyRemoteView(teamViewExpectedUpdated)),
+			},
+			{
+				// Plan-stability guard: re-applying the same config must produce
+				// an empty plan. Exercises the view's Optional+Computed fields
+				// (status, team role, app_instance display_order) and the
+				// config-order-preserving sort of teams/users/instances/
+				// permissions on read.
+				Config: tfConfig(configViewTeamsUpdated),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
 			},
 		},
 	})
@@ -123,22 +177,23 @@ func TestAccViewWithTeams(t *testing.T) {
 // Execution steps: Same as before
 //
 // Expected behavior:
-// Resource is created, updated, and destroyed without error
+// Resource is created, updated, and destroyed without error.
 func TestAccViewWithUsers(t *testing.T) {
+	sweepViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: configViewUsers,
+				Config: tfConfig(configViewUsers),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.users", userViewExpected),
 					testAccVerifyRemoteView(userViewExpected),
 				),
 			},
 			{
-				Config: configViewUsersUpdated,
+				Config: tfConfig(configViewUsersUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.users", userViewExpectedUpdated),
 					testAccVerifyRemoteView(userViewExpectedUpdated),
@@ -153,32 +208,33 @@ func TestAccViewWithUsers(t *testing.T) {
 // Execution steps: Same as before, but also test that instances can be removed and added
 //
 // Expected behavior:
-// View can be created and updated without error
+// View can be created and updated without error.
 func TestAccViewInstances(t *testing.T) {
+	sweepViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
 	resource.Test(t, resource.TestCase{
-		Providers: map[string]terraform.ResourceProvider{
-			"crucible": provider.Provider(),
-		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			// View with 2 app instances
 			{
-				Config: configViewInstances,
+				Config: tfConfig(configViewInstances),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpected),
 					testAccVerifyRemoteView(instanceViewExpected),
 				),
 			},
-			// Remove the app instances
+			// Remove the app instances (same resource, updated in place).
 			{
-				Config: configViewUsers,
+				Config: tfConfig(configViewInstancesNoInst),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVerifyLocalView("crucible_player_view.users", userViewExpected),
+					testAccVerifyLocalView("crucible_player_view.instances", userViewExpected),
 					testAccVerifyRemoteView(userViewExpected),
 				),
 			},
 			// Add them back
 			{
-				Config: configViewInstances,
+				Config: tfConfig(configViewInstances),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpected),
 					testAccVerifyRemoteView(instanceViewExpected),
@@ -186,7 +242,7 @@ func TestAccViewInstances(t *testing.T) {
 			},
 			// Update the instances
 			{
-				Config: configViewInstancesUpdated,
+				Config: tfConfig(configViewInstancesUpdated),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVerifyLocalView("crucible_player_view.instances", instanceViewExpectedUpdated),
 					testAccVerifyRemoteView(instanceViewExpectedUpdated),
@@ -196,7 +252,119 @@ func TestAccViewInstances(t *testing.T) {
 	})
 }
 
+// TestAccViewUserRoleStablePlan is a regression test for a plan-only bug: when an
+// unrelated attribute on a crucible_player_view changed (e.g. an application name),
+// the nested team -> user -> role attribute — which has no role configured — re-planned
+// as "(known after apply)" on every user, producing a spurious diff. The role plan
+// modifiers (UseStateForUnknown + unknownIfNull in player_view_server.go) fix this by
+// carrying the prior-state value forward.
+//
+// The defect is invisible to state-based checks (the value re-stabilizes after apply),
+// so this test asserts on the *plan* of an update: changing only the application name
+// must leave the user's role as the known value "" rather than unknown. With the fix the
+// PreApply check passes; without it ExpectKnownValue fails with "attribute value is
+// unknown".
+//
+// A single-team/single-user inline config is used (rather than the shared fixtures) so
+// the positional tfjsonpath team[0].user[0] is unambiguous.
+func TestAccViewUserRoleStablePlan(t *testing.T) {
+	// Use a seeded user GUID the Player API recognizes (the same one the shared
+	// user-view fixtures use); the generic TF_TEST_USER_ID is not a real Player
+	// user and 404s when added to a team.
+	userID := envOrDefault("TF_TEST_VIEW_USER_ID", "9b3b331c-10c1-448b-8114-21b2586d8e38")
+	sweepViewByName(t, "test")
+	registerViewCleanupByName(t, "test")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				// Create with one user and no configured role.
+				Config: tfConfig(viewOneUserConfig("appA", userID)),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view.regrole", "team.0.user.0.user_id", userID),
+					resource.TestCheckResourceAttr("crucible_player_view.regrole", "team.0.user.0.role", ""),
+				),
+			},
+			{
+				// Change only the application name. The user's role must stay a
+				// known "" in the plan, not flip to unknown.
+				Config: tfConfig(viewOneUserConfig("appB", userID)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectKnownValue(
+							"crucible_player_view.regrole",
+							tfjsonpath.New("team").AtSliceIndex(0).
+								AtMapKey("user").AtSliceIndex(0).AtMapKey("role"),
+							knownvalue.StringExact(""),
+						),
+					},
+				},
+			},
+		},
+	})
+}
+
+// viewOneUserConfig builds a minimal crucible_player_view with a single application and a
+// single team containing one user with no role configured. appName is the application
+// name (vary it to drive an unrelated in-place update).
+func viewOneUserConfig(appName, userID string) string {
+	return fmt.Sprintf(`resource "crucible_player_view" "regrole" {
+	name        = "test"
+	description = "role plan regression"
+	status      = "Active"
+
+	application {
+		name = %q
+	}
+
+	team {
+		name = "reg"
+
+		user {
+			user_id = %q
+		}
+	}
+}
+`, appName, userID)
+}
+
 // -------------------- Helper functions --------------------
+
+// testAccViewDestroyed asserts that every crucible_player_view resource left in
+// state no longer exists in the Player API after destroy.
+func testAccViewDestroyed(s *terraform.State) error {
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "crucible_player_view" {
+			continue
+		}
+		exists, err := api.ViewExists(rs.Primary.ID, getMap())
+		if err != nil {
+			return fmt.Errorf("error checking destroyed view %s: %w", rs.Primary.ID, err)
+		}
+		if exists {
+			return fmt.Errorf("view %s still exists after destroy", rs.Primary.ID)
+		}
+	}
+	return nil
+}
+
+// ifaceToStateString renders an application's string-or-bool attribute the way
+// it appears in Terraform state: "null" when absent, the string verbatim, or a
+// "true"/"false" rendering of a bool.
+func ifaceToStateString(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return "null"
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	default:
+		return fmt.Sprintf("%v", t)
+	}
+}
 
 func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.TestCheckFunc {
 	return resource.ComposeTestCheckFunc(
@@ -223,49 +391,48 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 				if app.Name == nil {
 					appName = "null"
 				} else {
-					appName = app.Name.(string)
+					appName = util.As[string](app.Name)
 				}
 
 				var appURL string
 				if app.URL == nil {
 					appURL = "null"
 				} else {
-					appURL = app.URL.(string)
+					appURL = util.As[string](app.URL)
 				}
 
 				var appIcon string
 				if app.Icon == nil {
 					appIcon = "null"
 				} else {
-					appIcon = app.Icon.(string)
+					appIcon = util.As[string](app.Icon)
 				}
 
-				var appEmbed string
-				if app.Embeddable == nil {
-					appEmbed = "null"
-				} else {
-					appEmbed = strconv.FormatBool(app.Embeddable.(bool))
-				}
-
-				var appLoad string
-				if app.LoadInBackground == nil {
-					appLoad = "null"
-				} else {
-					appLoad = strconv.FormatBool(app.LoadInBackground.(bool))
-				}
+				// embeddable / load_in_background are string-typed attributes on
+				// the application block, so the fixtures carry string values.
+				// Accept either a string or a bool to be safe.
+				appEmbed := ifaceToStateString(app.Embeddable)
+				appLoad := ifaceToStateString(app.LoadInBackground)
 
 				var appTemplate string
 				if app.AppTemplateID == nil {
 					appTemplate = "null"
 				} else {
-					appTemplate = app.AppTemplateID.(string)
+					appTemplate = util.As[string](app.AppTemplateID)
 				}
 
-				// View ID field is not checked b/c it is impossible to know at compile time, so we cannot provide an expected value
-				if localView[id] != app.ID || localView[templateId] != appTemplate ||
+				// app_id and the view id are server-assigned and unknowable at
+				// compile time, so they are not compared against a fixed expected
+				// value; we only assert app_id is populated in state.
+				if localView[id] == "" || localView[id] == "null" {
+					return fmt.Errorf("local state of application %d has no app_id", i)
+				}
+				if localView[templateId] != appTemplate ||
 					localView[icon] != appIcon || localView[load] != appLoad || localView[name] != appName || localView[url] != appURL ||
 					localView[embed] != appEmbed {
-					return fmt.Errorf("local state of application %d does not match expected", i)
+					return fmt.Errorf("local state of application %d does not match expected:\n  template: got %q want %q\n  icon: got %q want %q\n  load: got %q want %q\n  name: got %q want %q\n  url: got %q want %q\n  embed: got %q want %q",
+						i, localView[templateId], appTemplate, localView[icon], appIcon,
+						localView[load], appLoad, localView[name], appName, localView[url], appURL, localView[embed], appEmbed)
 				}
 
 			}
@@ -277,7 +444,7 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 
 			for i, team := range view.Teams {
 				name := "team." + strconv.Itoa(i) + ".name"
-				role := "team." + strconv.Itoa(i) + ".role_id"
+				role := "team." + strconv.Itoa(i) + ".role"
 				// Handle permissions
 				for j, perm := range team.Permissions {
 					locPerm := "team." + strconv.Itoa(i) + ".permissions." + strconv.Itoa(j)
@@ -299,7 +466,7 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 				// Handle users
 				for j, user := range team.Users {
 					locID := "team." + strconv.Itoa(i) + ".user." + strconv.Itoa(j) + ".user_id"
-					locRole := "team." + strconv.Itoa(i) + ".user." + strconv.Itoa(j) + ".role_id"
+					locRole := "team." + strconv.Itoa(i) + ".user." + strconv.Itoa(j) + ".role"
 
 					userRoleExpected := util.Ternary(user.Role == nil, "null", user.Role)
 
@@ -365,18 +532,21 @@ func testAccVerifyRemoteView(view *structs.ViewInfo) resource.TestCheckFunc {
 			return fmt.Errorf("remote state does not equal expected for view itself")
 		}
 
-		// Check equality on app fields
+		// Check equality on app fields. The app ID is server-assigned, so it is
+		// not compared. embeddable/load_in_background may come back as a bool from
+		// the API while the fixtures use strings, so normalize both sides.
 		for i, app := range view.Applications {
-			if remote.Applications[i].ID != app.ID || remote.Applications[i].Name != app.Name ||
+			if remote.Applications[i].Name != app.Name ||
 				remote.Applications[i].URL != app.URL || remote.Applications[i].Icon != app.Icon ||
-				remote.Applications[i].Embeddable != app.Embeddable || remote.Applications[i].LoadInBackground != app.LoadInBackground {
+				ifaceToStateString(remote.Applications[i].Embeddable) != ifaceToStateString(app.Embeddable) ||
+				ifaceToStateString(remote.Applications[i].LoadInBackground) != ifaceToStateString(app.LoadInBackground) {
 				return fmt.Errorf("expected does not equal actual remote state for application %d", i)
 			}
 		}
 
 		teams := remote.Teams
 		sort.Slice(teams, func(i, j int) bool {
-			return teams[i].Name.(string) < teams[j].Name.(string)
+			return util.As[string](teams[i].Name) < util.As[string](teams[j].Name)
 		})
 		// Get rid of admin team
 		teams = teams[1:]
@@ -392,28 +562,80 @@ func testAccVerifyRemoteView(view *structs.ViewInfo) resource.TestCheckFunc {
 		}
 
 		for i, team := range remote.Teams {
-			if team.Name != view.Teams[i].Name || team.Role != view.Teams[i].Role ||
-				!reflect.DeepEqual(team.Permissions, view.Teams[i].Permissions) {
+			// Permissions come back from the API in arbitrary order; compare as
+			// sets. The team Role is resolved to a name by ReadView.
+			if ifaceString(team.Name) != ifaceString(view.Teams[i].Name) || ifaceString(team.Role) != ifaceString(view.Teams[i].Role) ||
+				!sameStringSet(team.Permissions, view.Teams[i].Permissions) {
 				return fmt.Errorf("expected does not equal actual remote state for team %d", i)
 			}
 
-			// Check user equality
-			for j, user := range team.Users {
-				expectedRole := util.Ternary(view.Teams[i].Users[j].Role == nil, "", view.Teams[i].Users[j].Role)
-				if user.ID != view.Teams[i].Users[j].ID || user.Role != expectedRole {
+			// Check user equality. Order the remote users to match the expected
+			// (configured) order by id so the comparison is position-independent.
+			expectedUsers := view.Teams[i].Users
+			remoteUsers := append([]structs.UserInfo{}, team.Users...)
+			expectRank := map[string]int{}
+			for k, u := range expectedUsers {
+				expectRank[u.ID] = k
+			}
+			sort.SliceStable(remoteUsers, func(a, b int) bool {
+				return expectRank[remoteUsers[a].ID] < expectRank[remoteUsers[b].ID]
+			})
+			for j, user := range remoteUsers {
+				if user.ID != expectedUsers[j].ID || ifaceString(user.Role) != ifaceString(expectedUsers[j].Role) {
 					return fmt.Errorf("expected does not equal actual remote state for user %d of team %d", j, i)
 				}
 			}
 
-			// Check instance equality
-			for j, inst := range team.AppInstances {
-				if inst.Name != view.Teams[i].AppInstances[j].Name || inst.DisplayOrder != view.Teams[i].AppInstances[j].DisplayOrder {
+			// Check instance equality (order-independent by name).
+			expectedInsts := view.Teams[i].AppInstances
+			remoteInsts := append([]structs.AppInstance{}, team.AppInstances...)
+			instRank := map[string]int{}
+			for k, in := range expectedInsts {
+				instRank[in.Name] = k
+			}
+			sort.SliceStable(remoteInsts, func(a, b int) bool {
+				return instRank[remoteInsts[a].Name] < instRank[remoteInsts[b].Name]
+			})
+			for j, inst := range remoteInsts {
+				if inst.Name != expectedInsts[j].Name || inst.DisplayOrder != expectedInsts[j].DisplayOrder {
 					return fmt.Errorf("expected does not equal actual remote state for app instance %d of team %d", j, i)
 				}
 			}
 		}
 		return nil
 	}
+}
+
+// ifaceString coerces a nil-or-string interface into a string.
+func ifaceString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// sameStringSet reports whether two string slices contain the same elements,
+// ignoring order.
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, s := range a {
+		counts[s]++
+	}
+	for _, s := range b {
+		counts[s]--
+	}
+	for _, c := range counts {
+		if c != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func getLocalState(s *terraform.State) map[string]string {

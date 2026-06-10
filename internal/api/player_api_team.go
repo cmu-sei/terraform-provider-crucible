@@ -4,438 +4,308 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
+	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
-	"net/http"
 )
 
-// CreateTeams creates teams in the specified view
-//
-// param teams the teams to create
-//
-// param viewID: the view to create the teams within
-//
-// param m map: containing provider config info
-//
-// Returns some error on failure or nil on success
-func CreateTeams(teams *[]*structs.TeamInfo, viewID string, m map[string]string) error {
-	log.Printf("! At top of API wrapper to create teams")
+// This file adapts the provider's team operations onto the generated Player API
+// client (internal/playerclient). Signatures unchanged. Role-name lookups
+// (getRoleByName) live in player_api_user.go; getTeamRoleByName and readTeams
+// live here.
 
-	auth, err := util.GetAuth(m)
+// CreateTeams creates teams in the specified view, then adds their users and
+// application instances.
+func CreateTeams(teams *[]*structs.TeamInfo, viewID string, m map[string]string) error {
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// Create a new team for each entry in the slice of structs
+	vID, err := uuid.Parse(viewID)
+	if err != nil {
+		return err
+	}
+
 	for i, team := range *teams {
-		// We don't want the ID field in the request, so make struct into map and remove that key
-		asMap := team.ToMap()
-		delete(asMap, "id")
-
-		// Need to look up the role by name
-		role := asMap["role"]
-		delete(asMap, "role")
-
-		log.Printf("! Team's role: %v", role)
-		if role.(string) != "" {
-			roleID, err := getTeamRoleByName(role.(string), auth, m)
+		body := playerclient.CreateTeamCommand{Name: ifaceStrPtr(team.Name)}
+		if role := roleString(team.Role); role != "" {
+			roleID, err := getTeamRoleByName(role, m)
 			if err != nil {
 				return err
 			}
-
-			// API wasn't seeing role_id, rename to roleId
-			asMap["roleId"] = roleID
+			rid, err := uuid.Parse(roleID)
+			if err != nil {
+				return err
+			}
+			body.RoleId = &rid
 		}
 
-		asJSON, err := json.Marshal(asMap)
+		resp, err := client.CreateTeamWithResponse(context.Background(), vID, body)
 		if err != nil {
 			return err
 		}
-
-		log.Printf("! Team being created: %+v", asMap)
-
-		url := util.GetPlayerApiUrl(m) + "views/" + viewID + "/teams"
-		request, err := http.NewRequest("POST", url, bytes.NewBuffer(asJSON))
-		if err != nil {
-			return err
+		if resp.StatusCode() != http.StatusCreated {
+			return fmt.Errorf("player API returned with status code %d when creating team. %d teams created before error", resp.StatusCode(), i)
 		}
-		request.Header.Add("Authorization", "Bearer "+auth)
-		request.Header.Set("Content-Type", "application/json")
-		client := &http.Client{}
-
-		response, err := client.Do(request)
-		if err != nil {
-			return err
+		if resp.JSON201 == nil || resp.JSON201.Id == nil {
+			return fmt.Errorf("player API returned status 201 with no team id when creating team")
 		}
-
-		status := response.StatusCode
-		if status != http.StatusCreated {
-			return fmt.Errorf("player API returned with status code %d when creating team. %d teams created before error", status, i)
-		}
-
-		// Get the id of the team from the response
-		body := make(map[string]interface{})
-		err = json.NewDecoder(response.Body).Decode(&body)
-		if err != nil {
-			return err
-		}
-		teamID := body["id"].(string)
+		teamID := resp.JSON201.Id.String()
 		(*teams)[i].ID = teamID
 
-		log.Printf("! Team creation response body: %+v", body)
-		// Add each user to this team
+		// Add each user to the team, and set its role if configured.
 		for _, user := range team.Users {
-			err := addUser(user.ID, teamID, m)
-			if err != nil {
+			if err := addUser(user.ID, teamID, m); err != nil {
 				return err
 			}
-			log.Printf("! User's role: %v", user.Role)
-			if user.Role.(string) != "" {
-				err = SetUserRole(teamID, viewID, user, m)
-				if err != nil {
+			if roleString(user.Role) != "" {
+				if err := SetUserRole(teamID, viewID, user, m); err != nil {
 					return err
 				}
 			}
 		}
 
-		// Add each application to this team
-		for i, app := range team.AppInstances {
+		// Add each application instance to the team.
+		for j, app := range team.AppInstances {
 			id, err := AddApplication(app.Parent, teamID, app.DisplayOrder, m)
 			if err != nil {
 				return err
 			}
 			app.ID = id
-			team.AppInstances[i] = app
+			team.AppInstances[j] = app
 		}
 	}
 	return nil
 }
 
-// UpdateTeams updates the specified teams.
-//
-// Param teams: the teams to update.
-//
-// param m map: containing provider config info.
-//
-// Returns some error on failure or nil on success.
+// UpdateTeams updates the specified teams' name and role.
 func UpdateTeams(teams *[]*structs.TeamInfo, m map[string]string) error {
-	log.Printf("! At top of API wrapper for updating team")
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// Update each team
 	for i, team := range *teams {
-		log.Printf("! Team loop")
-		// Set up payload for PUT request
-		roleID, err := getTeamRoleByName(team.Role.(string), auth, m)
+		roleID, err := getTeamRoleByName(roleString(team.Role), m)
+		if err != nil {
+			return err
+		}
+		rid, err := uuid.Parse(roleID)
+		if err != nil {
+			return err
+		}
+		teamID, err := uuid.Parse(util.As[string](team.ID))
 		if err != nil {
 			return err
 		}
 
-		asJSON, err := json.Marshal(map[string]interface{}{
-			"id":     team.ID,
-			"name":   team.Name,
-			"roleId": roleID,
-		})
+		resp, err := client.UpdateTeamWithResponse(context.Background(), teamID,
+			playerclient.EditTeamCommand{Name: ifaceStrPtr(team.Name), RoleId: &rid})
 		if err != nil {
 			return err
 		}
-
-		url := util.GetPlayerApiUrl(m) + "teams/" + team.ID.(string)
-		log.Printf("! Updating team. URL: %v", url)
-		log.Printf("! Updating team. Payload: %+v", team)
-		request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
-		if err != nil {
-			return err
-		}
-		request.Header.Add("Authorization", "Bearer "+auth)
-		request.Header.Set("Content-Type", "application/json")
-		client := &http.Client{}
-
-		response, err := client.Do(request)
-		if err != nil {
-			return err
-		}
-
-		status := response.StatusCode
-		if status != http.StatusOK {
-			return fmt.Errorf("player API returned with status code %d when updating team. %d teams updated before error", status, i)
+		if resp.StatusCode() != http.StatusOK {
+			return fmt.Errorf("player API returned with status code %d when updating team. %d teams updated before error", resp.StatusCode(), i)
 		}
 	}
 	return nil
 }
 
-// DeleteTeams deletes the teams specified.
-//
-// param ids: the IDs of the teams to delete
-//
-// param m map: containing provider config info
-//
-// Returns some error on failure or nil on success
+// DeleteTeams deletes the specified teams.
 func DeleteTeams(ids *[]string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
 	for i, id := range *ids {
-		url := util.GetPlayerApiUrl(m) + "teams/" + id
-		request, err := http.NewRequest("DELETE", url, nil)
+		teamID, err := uuid.Parse(id)
 		if err != nil {
 			return err
 		}
-		request.Header.Add("Authorization", "Bearer "+auth)
-		client := &http.Client{}
-
-		response, err := client.Do(request)
+		resp, err := client.DeleteTeamWithResponse(context.Background(), teamID)
 		if err != nil {
 			return err
 		}
-
-		status := response.StatusCode
-		if status != http.StatusNoContent {
-			return fmt.Errorf("player API returned with status code %d when deleting team. %d teams deleted before error", status, i)
+		if resp.StatusCode() != http.StatusNoContent {
+			return fmt.Errorf("player API returned with status code %d when deleting team. %d teams deleted before error", resp.StatusCode(), i)
 		}
 	}
 	return nil
 }
 
-// AddPermissionsToTeam adds each team's specified permissions to that team
-//
-// param teams: A slice of structs representing the teams
-//
-// param m map: containing provider config info
-//
-// Returns some error on failure or nil on success
+// AddPermissionsToTeam adds each team's specified permissions to that team.
 func AddPermissionsToTeam(teams *[]*structs.TeamInfo, m map[string]string) error {
-	log.Printf("! At top of API wrapper to add permissions to team")
-	auth, err := util.GetAuth(m)
-	if err != nil {
-		return err
-	}
-
 	for _, team := range *teams {
-		log.Printf("! Adding permission to team %+v", team)
+		teamID := util.As[string](team.ID)
 		for _, perm := range team.Permissions {
-			url := util.GetPlayerApiUrl(m) + "teams/" + team.ID.(string) + "/permissions/" + perm
-			request, err := http.NewRequest("POST", url, nil)
-			if err != nil {
+			if err := addTeamPermission(teamID, perm, m); err != nil {
 				return err
 			}
-			request.Header.Add("Authorization", "Bearer "+auth)
-
-			client := &http.Client{}
-			response, err := client.Do(request)
-			if err != nil {
-				return err
-			}
-
-			status := response.StatusCode
-			if status != http.StatusOK {
-				return fmt.Errorf("player API returned with status code %d when adding permission to team", status)
-			}
-
 		}
 	}
-
 	return nil
 }
 
-// UpdateTeamPermissions adds and removes the permissions specified from the teams specified
-//
-// param toAdd: map corresponding teams with lists of permissions to add
-//
-// param toRemove: map corresponding teams with lists of permissions to remove
-//
-// param m map: containing provider config info
-//
-// Returns some error on failure or nil on success
+// UpdateTeamPermissions adds and removes the specified permissions from teams.
 func UpdateTeamPermissions(toAdd, toRemove map[string][]string, m map[string]string) error {
-	log.Printf("! At top of API wrapper to update a team's permissions")
-	auth, err := util.GetAuth(m)
-	if err != nil {
-		return err
-	}
-
-	// Add permissions
 	for team := range toAdd {
 		for _, perm := range toAdd[team] {
-			url := util.GetPlayerApiUrl(m) + "teams/" + team + "/permissions/" + perm
-			request, err := http.NewRequest("POST", url, nil)
-			if err != nil {
+			if err := addTeamPermission(team, perm, m); err != nil {
 				return err
-			}
-
-			request.Header.Add("Authorization", "Bearer "+auth)
-
-			client := &http.Client{}
-			response, err := client.Do(request)
-			if err != nil {
-				return err
-			}
-
-			status := response.StatusCode
-			if status != http.StatusOK {
-				return fmt.Errorf("player API returned with status code %d when adding permission to team", status)
 			}
 		}
 	}
-
-	// Remove permissions
 	for team := range toRemove {
 		for _, perm := range toRemove[team] {
-			url := util.GetPlayerApiUrl(m) + "teams/" + team + "/permissions/" + perm
-			request, err := http.NewRequest("DELETE", url, nil)
-			if err != nil {
+			if err := removeTeamPermission(team, perm, m); err != nil {
 				return err
-			}
-
-			request.Header.Add("Authorization", "Bearer "+auth)
-
-			client := &http.Client{}
-			response, err := client.Do(request)
-			if err != nil {
-				return err
-			}
-
-			status := response.StatusCode
-			if status != http.StatusOK {
-				return fmt.Errorf("player API returned with status code %d when adding permission to team", status)
 			}
 		}
 	}
-
 	return nil
 }
 
-// GetRoleByID returns the name of the role with the given ID
+// GetRoleByID returns the name of the role with the given id.
 func GetRoleByID(role string, m map[string]string) (string, error) {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return "", err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "roles/" + role
-	request, err := http.NewRequest("GET", url, nil)
+	roleID, err := uuid.Parse(role)
 	if err != nil {
 		return "", err
 	}
 
-	request.Header.Add("Authorization", "Bearer "+auth)
-
-	client := &http.Client{}
-	response, err := client.Do(request)
+	resp, err := client.GetRoleWithResponse(context.Background(), roleID)
 	if err != nil {
 		return "", err
 	}
-
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return "", fmt.Errorf("player API returned with status code %d looking for role %v", status, role)
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("player API returned with status code %d looking for role %v", resp.StatusCode(), role)
 	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	asMap := make(map[string]interface{})
-	err = json.Unmarshal([]byte(asStr), &asMap)
-	if err != nil {
-		return "", err
+	if resp.JSON200 == nil {
+		return "", fmt.Errorf("player API returned status 200 with an empty body for role %v", role)
 	}
-
-	return asMap["name"].(string), nil
+	return derefStr(resp.JSON200.Name), nil
 }
 
 // -------------------- Helper functions --------------------
 
-// Reads information for all teams in a view.
-//
-// param viewID: the view to look under
-//
-// Returns a list of teamInfo structs and an error value
+// addTeamPermission adds a single permission to a team.
+func addTeamPermission(teamID, permID string, m map[string]string) error {
+	client, err := playerclient.NewAuthed(m)
+	if err != nil {
+		return err
+	}
+	tID, err := uuid.Parse(teamID)
+	if err != nil {
+		return err
+	}
+	pID, err := uuid.Parse(permID)
+	if err != nil {
+		return err
+	}
+	resp, err := client.AddTeamPermissionToTeamWithResponse(context.Background(), tID, pID)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("player API returned with status code %d when adding permission to team", resp.StatusCode())
+	}
+	return nil
+}
+
+// removeTeamPermission removes a single permission from a team.
+func removeTeamPermission(teamID, permID string, m map[string]string) error {
+	client, err := playerclient.NewAuthed(m)
+	if err != nil {
+		return err
+	}
+	tID, err := uuid.Parse(teamID)
+	if err != nil {
+		return err
+	}
+	pID, err := uuid.Parse(permID)
+	if err != nil {
+		return err
+	}
+	resp, err := client.RemoveTeamPermissionFromTeamWithResponse(context.Background(), tID, pID)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("player API returned with status code %d when removing permission from team", resp.StatusCode())
+	}
+	return nil
+}
+
+// readTeams reads all teams in a view, including users, app instances, and
+// permissions for each.
 func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) {
-	log.Printf("! At top of API wrapper to read teams")
-
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "views/" + viewID + "/teams"
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-
-	client := &http.Client{}
-	response, err := client.Do(request)
+	vID, err := uuid.Parse(viewID)
 	if err != nil {
 		return nil, err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("player API returned with status code %d when reading teams", status)
+	resp, err := client.GetViewTeamsWithResponse(context.Background(), vID)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("player API returned with status code %d when reading teams", resp.StatusCode())
 	}
 
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	asMap := new([]map[string]interface{})
 	teams := new([]structs.TeamInfo)
-
-	// Unmarshal into a map instead of team struct so we can handle the permissions field
-	err = json.Unmarshal([]byte(asStr), asMap)
-	if err != nil {
-		return nil, err
+	if resp.JSON200 == nil {
+		return teams, nil
 	}
 
-	log.Printf("! Remote team state as map: %+v", asMap)
-	for _, team := range *asMap {
-		permissions := new([]string)
-		permissionsMaps := team["permissions"].([]interface{})
-		for _, perm := range permissionsMaps {
-			permMap := perm.(map[string]interface{})
-			*permissions = append(*permissions, permMap["id"].(string))
+	for _, t := range *resp.JSON200 {
+		// Leave permissions nil (not an empty slice) when there are none: the
+		// resource distinguishes a null permissions list from an empty one, and
+		// returning []string{} here causes "inconsistent result after apply".
+		var permissions []string
+		if t.Permissions != nil {
+			for _, p := range *t.Permissions {
+				if p.Id != nil {
+					permissions = append(permissions, p.Id.String())
+				}
+			}
 		}
-
-		*teams = append(*teams, structs.TeamInfo{
-			ID:          team["id"],
-			Name:        team["name"],
-			Role:        team["roleName"],
-			Permissions: *permissions,
-		})
+		info := structs.TeamInfo{
+			Name:        derefStr(t.Name),
+			Role:        derefStr(t.RoleName),
+			Permissions: permissions,
+		}
+		if t.Id != nil {
+			info.ID = t.Id.String()
+		}
+		*teams = append(*teams, info)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	// Read the users for each team
+	// Read users and app instances for each team.
 	for i, team := range *teams {
-		id := team.ID.(string)
+		id := util.As[string](team.ID)
 		users, err := getUsersInTeam(id, viewID, m)
 		if err != nil {
 			return nil, err
 		}
 		team.Users = users
-		(*teams)[i] = team
-	}
 
-	// Read the app instances for each team
-	for i, team := range *teams {
-		id := team.ID.(string)
 		instances, err := getTeamAppInstances(id, m)
 		if err != nil {
 			return nil, err
@@ -444,79 +314,29 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 		(*teams)[i] = team
 	}
 
-	log.Printf("! Returning from api, team structs are: %+v", teams)
 	return teams, nil
 }
 
-// Returns the ID of the role with the given name
-func getRoleByName(role, auth string, m map[string]string) (string, error) {
-	url := util.GetPlayerApiUrl(m) + "roles/name/" + role
-	request, err := http.NewRequest("GET", url, nil)
+// getTeamRoleByName returns the id of the team-role with the given name.
+func getTeamRoleByName(roleName string, m map[string]string) (string, error) {
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return "", err
 	}
 
-	request.Header.Add("Authorization", "Bearer "+auth)
-
-	client := &http.Client{}
-	response, err := client.Do(request)
+	resp, err := client.GetTeamRolesWithResponse(context.Background())
 	if err != nil {
 		return "", err
 	}
-
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return "", fmt.Errorf("player API returned with status code %d looking for role %v", status, role)
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("player API returned with status code %d looking for role %v", resp.StatusCode(), roleName)
 	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	asMap := make(map[string]interface{})
-	err = json.Unmarshal([]byte(asStr), &asMap)
-	if err != nil {
-		return "", err
-	}
-
-	return asMap["id"].(string), nil
-}
-
-// Returns the ID of the team role with the given name
-func getTeamRoleByName(roleName, auth string, m map[string]string) (string, error) {
-	url := util.GetPlayerApiUrl(m) + "team-roles"
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-
-	request.Header.Add("Authorization", "Bearer "+auth)
-
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return "", err
-	}
-
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return "", fmt.Errorf("player API returned with status code %d looking for role %v", status, roleName)
-	}
-
-	var roles []map[string]interface{}
-	if err := json.NewDecoder(response.Body).Decode(&roles); err != nil {
-		return "", err
-	}
-
-	for _, role := range roles {
-		if name, ok := role["name"].(string); ok && name == roleName {
-			if id, ok := role["id"].(string); ok {
-				return id, nil
+	if resp.JSON200 != nil {
+		for _, role := range *resp.JSON200 {
+			if role.Name != nil && *role.Name == roleName && role.Id != nil {
+				return role.Id.String(), nil
 			}
-			return "", fmt.Errorf("role %q found but has no valid id", roleName)
 		}
 	}
-
 	return "", fmt.Errorf("role %q not found in returned list", roleName)
 }

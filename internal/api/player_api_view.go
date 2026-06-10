@@ -4,106 +4,85 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
-	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
 	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
+	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 )
 
-// -------------------- API Wrappers --------------------
+// This file adapts the provider's view operations onto the oapi-codegen-generated
+// Player API client (internal/playerclient). Exported function signatures are
+// unchanged; only the bodies and model marshaling go through the typed client.
+// structs.ViewInfo remains the provider-facing model. ReadView still delegates to
+// readApps/readTeams (sibling files) for the nested application/team data.
 
-// CreateView wraps the create view POST call in player API
-//
-// param view: A struct containing info on the view to be created
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns the ID of the view and error on failure or nil on success
+// CreateView acquires a new view via the Player API and returns its id.
 func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
-	log.Printf("! At top of API wrapper to create view")
-
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return "", err
 	}
 
-	// Remove unset fields from payload
-	payload := map[string]interface{}{
-		"name":            view.Name,
-		"description":     util.Ternary(view.Description == "", nil, view.Description),
-		"status":          util.Ternary(view.Status == "", "Active", view.Status),
-		"createAdminTeam": view.CreateAdminTeam,
+	body := playerclient.CreateViewCommand{
+		Name:            strPtr(view.Name),
+		CreateAdminTeam: boolPtr(view.CreateAdminTeam),
 	}
+	if view.Description != "" {
+		body.Description = strPtr(view.Description)
+	}
+	status := view.Status
+	if status == "" {
+		status = "Active"
+	}
+	st := playerclient.ViewStatus(status)
+	body.Status = &st
 
-	log.Printf("! Creating view with payload %+v", payload)
-
-	asJSON, err := json.Marshal(payload)
+	resp, err := client.CreateViewWithResponse(context.Background(), body)
 	if err != nil {
 		return "", err
 	}
-
-	request, err := http.NewRequest("POST", util.GetPlayerApiUrl(m)+"views", bytes.NewBuffer(asJSON))
-	if err != nil {
-		return "", err
+	if resp.StatusCode() != http.StatusCreated {
+		return "", fmt.Errorf("player API returned with status code %d when creating view", resp.StatusCode())
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return "", err
+	if resp.JSON201 == nil || resp.JSON201.Id == nil {
+		return "", fmt.Errorf("player API returned status 201 with no view id when creating view")
 	}
-
-	status := response.StatusCode
-	if status != http.StatusCreated {
-		return "", fmt.Errorf("Player API returned with status code %d when creating view", status)
-	}
-
-	// Get the id of the view from the response
-	body := make(map[string]interface{})
-	err = json.NewDecoder(response.Body).Decode(&body)
-	defer response.Body.Close()
-
-	if err != nil {
-		return "", err
-	}
-
-	return body["id"].(string), nil
+	return resp.JSON201.Id.String(), nil
 }
 
-// ReadView wraps the player API call to read the fields of a view
-//
-// Param id: the id of the view to read
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns error on failure or nil on success
+// ReadView reads a view's fields plus its applications and teams.
 func ReadView(id string, m map[string]string) (*structs.ViewInfo, error) {
-	response, err := getViewByID(id, m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("Player API returned with status code %d when reading view", status)
+	viewID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
 	}
 
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(response.Body)
-	asStr := buf.String()
-	defer response.Body.Close()
-
-	view := &structs.ViewInfo{}
-
-	err = json.Unmarshal([]byte(asStr), view)
+	resp, err := client.GetViewWithResponse(context.Background(), viewID)
 	if err != nil {
-		log.Printf("! Error unmarshaling in read view")
 		return nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("player API returned with status code %d when reading view", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("player API returned status 200 with an empty body when reading view %s", id)
+	}
+
+	view := &structs.ViewInfo{
+		Name:        derefStr(resp.JSON200.Name),
+		Description: derefStr(resp.JSON200.Description),
+	}
+	if resp.JSON200.Status != nil {
+		view.Status = string(*resp.JSON200.Status)
 	}
 
 	apps, err := readApps(id, m)
@@ -120,123 +99,101 @@ func ReadView(id string, m map[string]string) (*structs.ViewInfo, error) {
 	return view, nil
 }
 
-// UpdateView wraps the update view player API call
-//
-// param view: A struct containing info on the view to be created
-//
-// param m: A map containing configuration info for the provider
-//
-// param id: The id of the view to update
-//
-// Returns error on failure or nil on success
+// UpdateView updates a view's top-level fields.
 func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
-	log.Printf("! At top of API wrapper to update view")
-
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	// This API call requires the ID of the view to be supplied
-	asMap := view.ToMap()
-	asMap["id"] = id
-
-	asJSON, err := json.Marshal(asMap)
+	viewID, err := uuid.Parse(id)
 	if err != nil {
 		return err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "views/" + id
-	log.Printf("! url: %v", url)
-	request, err := http.NewRequest("PUT", url, bytes.NewBuffer(asJSON))
+	body := playerclient.EditViewCommand{
+		Name:        strPtr(view.Name),
+		Description: strPtr(view.Description),
+	}
+	if view.Status != "" {
+		st := playerclient.ViewStatus(view.Status)
+		body.Status = &st
+	}
+
+	resp, err := client.UpdateViewWithResponse(context.Background(), viewID, body)
 	if err != nil {
 		return err
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-
-	log.Printf("! View before update api call %+v", asMap)
-	response, err := client.Do(request)
-	if err != nil {
-		return err
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("player API returned with status code %d when updating view", resp.StatusCode())
 	}
-	log.Printf("! Response: %+v", response)
-
-	status := response.StatusCode
-	if status != http.StatusOK {
-		return fmt.Errorf("Player API returned with status code %d when updating view", status)
-	}
-
 	return nil
 }
 
-// DeleteView wraps the player API delete view call
-//
-// Param id: The id of the view to delete
-//
-// param m: A map containing configuration info for the provider
-//
-// Returns error on failure or nil on success
+// DeleteView deletes a view.
 func DeleteView(id string, m map[string]string) error {
-	auth, err := util.GetAuth(m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "views/" + id
-	request, err := http.NewRequest("DELETE", url, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-	client := &http.Client{}
-
-	response, err := client.Do(request)
+	viewID, err := uuid.Parse(id)
 	if err != nil {
 		return err
 	}
 
-	status := response.StatusCode
-	if status != http.StatusNoContent {
-		return fmt.Errorf("Player API returned with status code %d when deleting view", status)
+	resp, err := client.DeleteViewWithResponse(context.Background(), viewID)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != http.StatusNoContent {
+		return fmt.Errorf("player API returned with status code %d when deleting view", resp.StatusCode())
 	}
 	return nil
 }
 
-// ViewExists returns true if a view with a given id exists
-//
-// param id: The ID of the view under consideration
-//
-// param m: A map containing configuration info for the provider
+// FindViewByName returns the id of the first view whose name matches, or an
+// empty string if none is found. Used by test cleanup to locate a leaked view
+// (whose computed id wasn't captured) by its known fixed name.
+func FindViewByName(name string, m map[string]string) (string, error) {
+	client, err := playerclient.NewAuthed(m)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.GetViewsWithResponse(context.Background())
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("player API returned with status code %d when listing views", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", nil
+	}
+	for _, v := range *resp.JSON200 {
+		if v.Name != nil && *v.Name == name && v.Id != nil {
+			return v.Id.String(), nil
+		}
+	}
+	return "", nil
+}
+
+// ViewExists returns true if a view with the given id exists.
 func ViewExists(id string, m map[string]string) (bool, error) {
-	response, err := getViewByID(id, m)
+	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return false, err
 	}
-	return (response.StatusCode != http.StatusNotFound), nil
-}
 
-// -------------------- Helper functions --------------------
-
-func getViewByID(id string, m map[string]string) (*http.Response, error) {
-	auth, err := util.GetAuth(m)
+	viewID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
-	url := util.GetPlayerApiUrl(m) + "views/" + id
-	request, err := http.NewRequest("GET", url, nil)
+	resp, err := client.GetViewWithResponse(context.Background(), viewID)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	request.Header.Add("Authorization", "Bearer "+auth)
-
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
+	return resp.StatusCode() != http.StatusNotFound, nil
 }

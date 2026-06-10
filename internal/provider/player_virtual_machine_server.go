@@ -4,518 +4,578 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"strings"
+
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
-	"log"
-	"sort"
-	"strings"
 
 	"github.com/google/uuid"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// Maps the required operations to the functions defined below.
-// The map of strings to Schema pointers defines the properties of a resource.
-func playerVirtualMachine() *schema.Resource {
-	return &schema.Resource{
-		Create: playerVirtualMachineCreate,
-		Read:   playerVirtualMachineRead,
-		Update: playerVirtualMachineUpdate,
-		Delete: playerVirtualMachineDelete,
+var (
+	_ resource.Resource                = &virtualMachineResource{}
+	_ resource.ResourceWithConfigure   = &virtualMachineResource{}
+	_ resource.ResourceWithImportState = &virtualMachineResource{}
+)
 
-		Schema: map[string]*schema.Schema{
-			"vm_id": {
-				Type:     schema.TypeString,
+// virtualMachineResource is the resource implementation for
+// crucible_player_virtual_machine.
+type virtualMachineResource struct {
+	cfg map[string]string
+}
+
+type vmModel struct {
+	ID         types.String `tfsdk:"id"`
+	VMID       types.String `tfsdk:"vm_id"`
+	URL        types.String `tfsdk:"url"`
+	DefaultURL types.Bool   `tfsdk:"default_url"`
+	Name       types.String `tfsdk:"name"`
+	TeamIDs    types.List   `tfsdk:"team_ids"`
+	UserID     types.String `tfsdk:"user_id"`
+	Embeddable types.Bool   `tfsdk:"embeddable"`
+	Connection types.List   `tfsdk:"console_connection_info"`
+	Proxmox    types.List   `tfsdk:"proxmox_vm_info"`
+}
+
+// Object attribute types for the nested blocks.
+var consoleConnectionAttrTypes = map[string]attr.Type{
+	"hostname": types.StringType,
+	"port":     types.StringType,
+	"protocol": types.StringType,
+	"username": types.StringType,
+	"password": types.StringType,
+}
+
+var proxmoxAttrTypes = map[string]attr.Type{
+	"id":   types.StringType,
+	"node": types.StringType,
+	"type": types.StringType,
+}
+
+// NewVirtualMachineResource is a helper to instantiate the resource.
+func NewVirtualMachineResource() resource.Resource {
+	return &virtualMachineResource{}
+}
+
+func (r *virtualMachineResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_player_virtual_machine"
+}
+
+func (r *virtualMachineResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+	cfg, ok := req.ProviderData.(map[string]string)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Provider Configuration Type",
+			fmt.Sprintf("Expected map[string]string, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+		return
+	}
+	r.cfg = cfg
+}
+
+func (r *virtualMachineResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"vm_id": schema.StringAttribute{
+				// Optional+Computed: when omitted, a UUID is generated and kept
+				// in state (the old DiffSuppress suppressed empty new values).
 				Optional: true,
-				ForceNew: true,
-				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return new == ""
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"url": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				ValidateFunc: validation.IsURLWithHTTPorHTTPS,
-				// If defaultUrl is true, Url is actually blank and has been computed by the API,
-				// so it is unchanged if new value is also blank
-				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					defaultUrl := false
-					defaultUrlObj := d.Get("default_url")
-
-					if defaultUrlObj != nil {
-						defaultUrl = defaultUrlObj.(bool)
-					}
-
-					return defaultUrl && len(new) == 0
+			"url": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(httpURLRegex, "must be a valid URL beginning with http:// or https://"),
+				},
+				// When default_url is true the API computes the URL, so an empty
+				// configured value should not produce a diff.
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"default_url": {
-				Type:     schema.TypeBool,
+			"default_url": schema.BoolAttribute{
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"name": schema.StringAttribute{
+				Required: true,
+			},
+			"team_ids": schema.ListAttribute{
+				Required:    true,
+				ElementType: types.StringType,
+				Validators: []validator.List{
+					listvalidator.SizeAtLeast(1),
+				},
+			},
+			"user_id": schema.StringAttribute{
+				Optional: true,
 				Computed: true,
 			},
-			"name": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"team_ids": {
-				Type:     schema.TypeList,
-				Required: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-				MinItems: 1,
-			},
-			"user_id": {
-				Type:     schema.TypeString,
+			"embeddable": schema.BoolAttribute{
 				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(true),
 			},
-			"embeddable": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  true,
-			},
-			"console_connection_info": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Default:  nil,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"hostname": {
-							Type:     schema.TypeString,
-							Optional: true,
-						},
-						"port": {
-							Type:     schema.TypeString,
-							Optional: true,
-						},
-						"protocol": {
-							Type:     schema.TypeString,
-							Optional: true,
-						},
-						"username": {
-							Type:     schema.TypeString,
-							Optional: true,
-						},
-						"password": {
-							Type:     schema.TypeString,
-							Optional: true,
-						},
+		},
+		Blocks: map[string]schema.Block{
+			"console_connection_info": schema.ListNestedBlock{
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"hostname": schema.StringAttribute{Optional: true},
+						"port":     schema.StringAttribute{Optional: true},
+						"protocol": schema.StringAttribute{Optional: true},
+						"username": schema.StringAttribute{Optional: true},
+						"password": schema.StringAttribute{Optional: true},
 					},
 				},
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(1),
+				},
 			},
-			"proxmox_vm_info": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Default:  nil,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"id": {
-							Type:     schema.TypeString,
+			"proxmox_vm_info": schema.ListNestedBlock{
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
 							Optional: true,
-							ForceNew: true,
-							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-								idTokens := strings.Split(new, "/")
-								return len(idTokens) == 3 && idTokens[2] == old
+							PlanModifiers: []planmodifier.String{
+								stringplanmodifier.RequiresReplace(),
+								proxmoxIDPlanModifier{},
 							},
 						},
-						"node": {
-							Type:     schema.TypeString,
+						"node": schema.StringAttribute{Optional: true},
+						"type": schema.StringAttribute{
 							Optional: true,
-						},
-						"type": {
-							Type:         schema.TypeString,
-							Optional:     true,
-							Default:      "QEMU",
-							ValidateFunc: validation.StringInSlice([]string{"QEMU", "LXC"}, false),
+							Computed: true,
+							Default:  stringdefault.StaticString("QEMU"),
+							Validators: []validator.String{
+								stringvalidator.OneOf("QEMU", "LXC"),
+							},
 						},
 					},
+				},
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(1),
 				},
 			},
 		},
 	}
 }
 
-/*
-For create and update, we do the necessary operations, then call read to ensure everything worked
-These functions should *never* panic or call os.Exit, just return an error if something goes wrong
-Rules for updating state (summarized from docs at https://www.terraform.io/docs/extend/writing-custom-providers.html#error-handling-amp-partial-state):
-
-	1. Regardless of whether or not an error is returned from Create, state will be saved if SetID is called, and will
-	not be saved if SetID is not called. That is, state is saved if and only if SetID is called. Important: if there is
-	an error, state will still be saved if SetID is called.
-
-	2. If the Update function returns with or without an error, the full state is saved. If the ID becomes blank, the
-	resource is destroyed (even within an update, though this shouldn't happen except in error scenarios).
-
-	3. If the Destroy function returns without an error, the resource is assumed to be destroyed, and all state is removed.
-	If it returns with an error, all prior state is preserved.
-
-	4. If partial mode is enabled when a create or update returns, only the explicitly enabled configuration keys are
-	persisted, resulting in a partial state.
-*/
-
-/*
-get id, URL, name, teamIds, userId, and allowedNetworks via d.Get(). These are the parameters needed in the
-API's POST call to create a new VM.
-With the data, construct a JSON object and use it to call API
-check for error in API response
-Set d's properties using the above data.
-call read to ensure everything worked properly
-*/
-func playerVirtualMachineCreate(d *schema.ResourceData, m interface{}) error {
-	log.Printf("! In create function")
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *virtualMachineResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan vmModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	// We have to convert []interface{} to []string manually
-	tIDs := d.Get("team_ids").([]interface{})
-	convertedTeamIDs := util.ToStringSlice(&tIDs)
+	teamIDs, diags := toStringSlice(ctx, plan.TeamIDs)
+	resp.Diagnostics.Append(diags...)
 
-	var uid interface{}
-	if d.Get("user_id").(string) == "" {
-		uid = nil
-	} else {
-		uid = d.Get("user_id")
+	connection, diags := expandConnection(ctx, plan.Connection)
+	resp.Diagnostics.Append(diags...)
+
+	proxmox, diags := expandProxmox(ctx, plan.Proxmox)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	var vmID string
-	if d.Get("vm_id").(string) == "" {
+	// Generate a VM ID when one was not supplied.
+	vmID := plan.VMID.ValueString()
+	if vmID == "" {
 		vmID = uuid.NewString()
-	} else {
-		vmID = d.Get("vm_id").(string)
-	}
-
-	// Grab the console connection info block if one exists
-	connectionGeneric := d.Get("console_connection_info").([]interface{})
-	log.Printf("! In create, console connection info = %v", connectionGeneric)
-	var connection *structs.ConsoleConnection
-	if len(connectionGeneric) > 0 {
-		connection = structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))
-	} else {
-		connection = nil
-	}
-
-	// Grab the proxmox vm info block if one exists
-	proxmoxGeneric := d.Get("proxmox_vm_info").([]interface{})
-	log.Printf("! In create, proxmox vm info = %v", proxmoxGeneric)
-	var proxmox *structs.ProxmoxInfo
-	if len(proxmoxGeneric) > 0 {
-		proxmox = structs.ProxmoxInfoFromMap(proxmoxGeneric[0].(map[string]interface{}))
-	} else {
-		proxmox = nil
 	}
 
 	reqBody := &structs.VMInfo{
 		ID:         vmID,
-		URL:        d.Get("url").(string),
-		Name:       d.Get("name").(string),
-		TeamIDs:    *convertedTeamIDs,
-		UserID:     uid,
-		Embeddable: d.Get("embeddable").(bool),
+		URL:        plan.URL.ValueString(),
+		Name:       plan.Name.ValueString(),
+		TeamIDs:    teamIDs,
+		UserID:     userIDValue(plan.UserID),
+		Embeddable: plan.Embeddable.ValueBool(),
 		Connection: connection,
 		Proxmox:    proxmox,
 	}
-	log.Printf("! VM to be created with the following fields:\n %+v", reqBody)
 
-	casted := m.(map[string]string)
-	log.Printf("! In create function, calling create API wrapper")
-	err := api.CreateVM(reqBody, casted)
-	if err != nil {
-		return err
+	if err := api.CreateVM(reqBody, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error creating virtual machine", err.Error())
+		return
 	}
 
-	// If no errors occurred, set the properties of d. This tells terraform the resource was created
-	d.SetId(vmID)
-	err = d.Set("url", reqBody.URL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("default_url", reqBody.DefaultURL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("name", reqBody.Name)
-	if err != nil {
-		return err
-	}
-	err = d.Set("team_ids", reqBody.TeamIDs)
-	if err != nil {
-		return err
-	}
-	err = d.Set("user_id", reqBody.UserID)
-	if err != nil {
-		return err
+	plan.ID = types.StringValue(vmID)
+
+	resp.Diagnostics.Append(r.read(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	log.Printf("! In create function, calling read function")
-	return playerVirtualMachineRead(d, m)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-/*
-Call API to get resource. Arg to API function is the ID.
-If VM does not exist, set ID to "" and return nil.
-Take the data structure returned by the API and use it to update d using err = d.Set()
-
-	if err != nil {
-	    return err
-	}
-*/
-func playerVirtualMachineRead(d *schema.ResourceData, m interface{}) error {
-	log.Printf("! In read function")
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *virtualMachineResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state vmModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	id := d.Id()
-	casted := m.(map[string]string)
-	log.Printf("! In read function, calling vmExists function")
-	exists, err := api.VMExists(id, casted)
+	exists, err := api.VMExists(state.ID.ValueString(), r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error checking virtual machine existence", err.Error())
+		return
 	}
 	if !exists {
-		log.Printf("! In read function, VM does not exist")
-		d.SetId("")
-		return nil
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
-	log.Printf("! In read function, calling read API wrapper")
-	info, err := api.GetVMInfo(id, casted)
-	if err != nil {
-		return err
-	}
-	log.Printf("! In read, remote state was:\n %+v", info)
-
-	// Team IDs must be sorted alphabetically to prevent unnecessary updates
-	sort.Slice(info.TeamIDs, func(i, j int) bool {
-		return info.TeamIDs[i] < info.TeamIDs[j]
-	})
-
-	d.SetId(info.ID)
-	err = d.Set("vm_id", info.ID)
-	if err != nil {
-		return err
-	}
-	err = d.Set("url", info.URL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("default_url", info.DefaultURL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("name", info.Name)
-	if err != nil {
-		return err
-	}
-	err = d.Set("user_id", info.UserID)
-	if err != nil {
-		return err
-	}
-	err = d.Set("team_ids", info.TeamIDs)
-	if err != nil {
-		return err
-	}
-	err = d.Set("embeddable", info.Embeddable)
-	if err != nil {
-		return err
+	resp.Diagnostics.Append(r.read(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	if info.Connection != nil {
-		err = d.Set("console_connection_info", []interface{}{info.Connection.ToMap()})
-		if err != nil {
-			return err
-		}
-	}
-
-	if info.Proxmox != nil {
-		err = d.Set("proxmox_vm_info", []interface{}{info.Proxmox.ToMap()})
-
-		if err != nil {
-			return err
-		}
-	}
-
-	log.Printf("! Returning from read function without error")
-	return nil
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-/*
-Read data from .tf file using d.Get() (as in Create)
-Here we only need url, name, userId, and allowedNetworks
-Update d using this new data with err = d.Set()
-
-	if err != nil {
-	    return err
+func (r *virtualMachineResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan, state vmModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-Update the VM using update API function
-If successful, return nil else return error
-*/
-func playerVirtualMachineUpdate(d *schema.ResourceData, m interface{}) error {
-	log.Printf("! In update function")
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
-	}
+	id := state.ID.ValueString()
 
-	// Add and remove VM to/from teams as necessary
-	if d.HasChange("team_ids") {
-		oldGeneric, currGeneric := d.GetChange("team_ids")
-
-		old := oldGeneric.([]interface{})
-		curr := currGeneric.([]interface{})
-
-		oldStr := util.ToStringSlice(&old)
-		currStr := util.ToStringSlice(&curr)
-
-		// Find the teams this VM should be removed from (in old but not in curr)
-		toRemove := new([]string)
-		for _, team := range *oldStr {
-			if !util.StrSliceContains(currStr, team) {
-				*toRemove = append(*toRemove, team)
-			}
+	// Reconcile team membership when team_ids changed.
+	if !plan.TeamIDs.Equal(state.TeamIDs) {
+		oldTeams, diags := toStringSlice(ctx, state.TeamIDs)
+		resp.Diagnostics.Append(diags...)
+		newTeams, diags := toStringSlice(ctx, plan.TeamIDs)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
 		}
 
-		// Find the teams this VM should be added to (in curr but not in old)
-		toAdd := new([]string)
-		for _, team := range *currStr {
-			if !util.StrSliceContains(oldStr, team) {
-				*toAdd = append(*toAdd, team)
-			}
+		toRemove := stringsDifference(oldTeams, newTeams)
+		toAdd := stringsDifference(newTeams, oldTeams)
+
+		if err := api.AddVMToTeams(&toAdd, id, r.cfg); err != nil {
+			resp.Diagnostics.AddError("Error adding virtual machine to teams", err.Error())
+			return
 		}
-
-		casted := m.(map[string]string)
-		log.Printf("! Teams to remove VM from: %+v", toRemove)
-		log.Printf("! Teams to add VM to: %+v", toAdd)
-
-		err := api.AddVMToTeams(toAdd, d.Id(), casted)
-		if err != nil {
-			return err
-		}
-
-		err = api.RemoveVMFromTeams(toRemove, d.Id(), casted)
-		if err != nil {
-			return err
-		}
-
-		log.Printf("! In update, setting team_ids to: %+v", curr)
-
-		// Team IDs must be sorted alphabetically to prevent unnecessary updates
-		sort.Slice(curr, func(i, j int) bool {
-			return curr[i].(string) < curr[j].(string)
-		})
-
-		err = d.Set("team_ids", curr)
-		if err != nil {
-			return err
+		if err := api.RemoveVMFromTeams(&toRemove, id, r.cfg); err != nil {
+			resp.Diagnostics.AddError("Error removing virtual machine from teams", err.Error())
+			return
 		}
 	}
 
-	// Update other fields
-	var uid interface{}
-	if d.Get("user_id").(string) == "" {
-		uid = nil
-	} else {
-		uid = d.Get("user_id")
+	connection, diags := expandConnection(ctx, plan.Connection)
+	resp.Diagnostics.Append(diags...)
+
+	proxmox, diags := expandProxmox(ctx, plan.Proxmox)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	var url string
-	if d.Get("default_url").(bool) {
+	// If default_url is set, the URL is computed by the API, so send empty.
+	url := plan.URL.ValueString()
+	if state.DefaultURL.ValueBool() {
 		url = ""
-	} else {
-		url = d.Get("url").(string)
 	}
 
-	var embeddable bool
-	if d.Get("embeddable").(bool) {
-		embeddable = d.Get("embeddable").(bool)
-	} else {
-		embeddable = true
-	}
-
-	connectionGeneric := d.Get("console_connection_info").([]interface{})
-	var connection *structs.ConsoleConnection
-	if len(connectionGeneric) != 0 {
-		connection = structs.ConnectionFromMap(connectionGeneric[0].(map[string]interface{}))
-	}
-
-	proxmoxGeneric := d.Get("proxmox_vm_info").([]interface{})
-	var proxmox *structs.ProxmoxInfo
-	if len(proxmoxGeneric) != 0 {
-		proxmox = structs.ProxmoxInfoFromMap(proxmoxGeneric[0].(map[string]interface{}))
-	}
-
-	// The ID and TeamIDs parameters will be ignored by the API.
+	// The ID and TeamIDs parameters are ignored by the update API.
 	reqBody := &structs.VMInfo{
 		ID:         "",
 		URL:        url,
-		Name:       d.Get("name").(string),
+		Name:       plan.Name.ValueString(),
 		TeamIDs:    []string{""},
-		UserID:     uid,
-		Embeddable: embeddable,
+		UserID:     userIDValue(plan.UserID),
+		Embeddable: plan.Embeddable.ValueBool(),
 		Connection: connection,
 		Proxmox:    proxmox,
 	}
 
-	casted := m.(map[string]string)
-	log.Printf("! In update function, calling update API wrapper")
-	err := api.UpdateVM(reqBody, d.Id(), casted)
-	if err != nil {
-		return err
+	if err := api.UpdateVM(reqBody, id, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error updating virtual machine", err.Error())
+		return
 	}
 
-	// Set the local state to reflect the update
-	err = d.Set("url", reqBody.URL)
-	if err != nil {
-		return err
-	}
-	err = d.Set("name", reqBody.Name)
-	if err != nil {
-		return err
-	}
-	err = d.Set("user_id", reqBody.UserID)
-	if err != nil {
-		return err
+	resp.Diagnostics.Append(r.read(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	log.Printf("! Calling read from update")
-	return playerVirtualMachineRead(d, m)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-/*
-Check if VM has already done destroyed using get VM by ID API function.
-If it's already been destroyed, return nil (no error)
-If it still exists, call the API delete function
-If delete is successful, return nil
-If there is an error with deletion, return an error
-
-d.SetID("") is called implicitly, no need to call it here
-*/
-func playerVirtualMachineDelete(d *schema.ResourceData, m interface{}) error {
-	log.Printf("! In delete function")
-	if m == nil {
-		return fmt.Errorf("error configuring provider")
+func (r *virtualMachineResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state vmModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	id := d.Id()
-	casted := m.(map[string]string)
-	log.Printf("! In delete function, calling vmExists")
-	exists, err := api.VMExists(id, casted)
-
+	id := state.ID.ValueString()
+	exists, err := api.VMExists(id, r.cfg)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("Error checking virtual machine existence", err.Error())
+		return
+	}
+	if !exists {
+		return
 	}
 
-	if !exists {
-		log.Printf("! In delete function, VM does not exist")
+	if err := api.DeleteVM(id, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error deleting virtual machine", err.Error())
+	}
+}
+
+func (r *virtualMachineResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("vm_id"), req.ID)...)
+}
+
+// read refreshes the model from the API.
+func (r *virtualMachineResource) read(ctx context.Context, m *vmModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	info, err := api.GetVMInfo(m.ID.ValueString(), r.cfg)
+	if err != nil {
+		diags.AddError("Error reading virtual machine", err.Error())
+		return diags
+	}
+
+	m.ID = types.StringValue(info.ID)
+	m.VMID = types.StringValue(info.ID)
+	m.URL = types.StringValue(consoleURLBase(info.URL))
+	m.DefaultURL = types.BoolValue(info.DefaultURL)
+	m.Name = types.StringValue(info.Name)
+	m.Embeddable = types.BoolValue(info.Embeddable)
+
+	// team_ids is a Required list, so the value carried into state must match
+	// the configured order; the API returns team ids in an arbitrary order.
+	// Preserve the order already in the model (config order on create, state
+	// order on refresh) for ids the API still reports, and append any genuinely
+	// new ones deterministically. (Sorting here would reorder the list relative
+	// to config and trigger "inconsistent result after apply".)
+	priorTeamIDs, d := toStringSlice(ctx, m.TeamIDs)
+	diags.Append(d...)
+	teamIDs, d := types.ListValueFrom(ctx, types.StringType, orderTeamIDs(priorTeamIDs, info.TeamIDs))
+	diags.Append(d...)
+	m.TeamIDs = teamIDs
+
+	if uid, ok := info.UserID.(string); ok && uid != "" {
+		m.UserID = types.StringValue(uid)
+	} else {
+		m.UserID = types.StringNull()
+	}
+
+	connection, d := flattenConnection(info.Connection)
+	diags.Append(d...)
+	m.Connection = connection
+
+	proxmox, d := flattenProxmox(info.Proxmox)
+	diags.Append(d...)
+	m.Proxmox = proxmox
+
+	return diags
+}
+
+// expandConnection converts the console_connection_info block list into a
+// ConsoleConnection struct, or nil when the block is absent.
+func expandConnection(ctx context.Context, list types.List) (*structs.ConsoleConnection, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if list.IsNull() || list.IsUnknown() || len(list.Elements()) == 0 {
+		return nil, diags
+	}
+
+	var elems []struct {
+		Hostname types.String `tfsdk:"hostname"`
+		Port     types.String `tfsdk:"port"`
+		Protocol types.String `tfsdk:"protocol"`
+		Username types.String `tfsdk:"username"`
+		Password types.String `tfsdk:"password"`
+	}
+	diags = list.ElementsAs(ctx, &elems, false)
+	if diags.HasError() || len(elems) == 0 {
+		return nil, diags
+	}
+
+	e := elems[0]
+	return &structs.ConsoleConnection{
+		Hostname: e.Hostname.ValueString(),
+		Port:     e.Port.ValueString(),
+		Protocol: e.Protocol.ValueString(),
+		Username: e.Username.ValueString(),
+		Password: e.Password.ValueString(),
+	}, diags
+}
+
+// flattenConnection converts a ConsoleConnection struct into a block list.
+func flattenConnection(conn *structs.ConsoleConnection) (types.List, diag.Diagnostics) {
+	objType := types.ObjectType{AttrTypes: consoleConnectionAttrTypes}
+	if conn == nil {
+		return types.ListNull(objType), nil
+	}
+
+	obj, diags := types.ObjectValue(consoleConnectionAttrTypes, map[string]attr.Value{
+		"hostname": types.StringValue(conn.Hostname),
+		"port":     types.StringValue(conn.Port),
+		"protocol": types.StringValue(conn.Protocol),
+		"username": types.StringValue(conn.Username),
+		"password": types.StringValue(conn.Password),
+	})
+	if diags.HasError() {
+		return types.ListNull(objType), diags
+	}
+
+	list, d := types.ListValue(objType, []attr.Value{obj})
+	diags.Append(d...)
+	return list, diags
+}
+
+// expandProxmox converts the proxmox_vm_info block list into a ProxmoxInfo
+// struct, reusing the existing map-based parser, or nil when absent.
+func expandProxmox(ctx context.Context, list types.List) (*structs.ProxmoxInfo, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if list.IsNull() || list.IsUnknown() || len(list.Elements()) == 0 {
+		return nil, diags
+	}
+
+	var elems []struct {
+		ID   types.String `tfsdk:"id"`
+		Node types.String `tfsdk:"node"`
+		Type types.String `tfsdk:"type"`
+	}
+	diags = list.ElementsAs(ctx, &elems, false)
+	if diags.HasError() || len(elems) == 0 {
+		return nil, diags
+	}
+
+	e := elems[0]
+	return structs.ProxmoxInfoFromMap(map[string]interface{}{
+		"id":   e.ID.ValueString(),
+		"node": e.Node.ValueString(),
+		"type": e.Type.ValueString(),
+	}), diags
+}
+
+// flattenProxmox converts a ProxmoxInfo struct into a block list.
+func flattenProxmox(proxmox *structs.ProxmoxInfo) (types.List, diag.Diagnostics) {
+	objType := types.ObjectType{AttrTypes: proxmoxAttrTypes}
+	if proxmox == nil {
+		return types.ListNull(objType), nil
+	}
+
+	asMap := proxmox.ToMap()
+	obj, diags := types.ObjectValue(proxmoxAttrTypes, map[string]attr.Value{
+		"id":   types.StringValue(util.As[string](asMap["id"])),
+		"node": types.StringValue(util.As[string](asMap["node"])),
+		"type": types.StringValue(util.As[string](asMap["type"])),
+	})
+	if diags.HasError() {
+		return types.ListNull(objType), diags
+	}
+
+	list, d := types.ListValue(objType, []attr.Value{obj})
+	diags.Append(d...)
+	return list, diags
+}
+
+// consoleURLBase strips the Guacamole client fragment the VM API appends to a
+// VM url when console_connection_info is set (".../#/client/<token>"), so the
+// url carried in state matches the configured base value rather than the
+// API-rewritten one. The token is composed at response time (see the VM API's
+// Vm.GetUrl); without stripping it, Terraform reports "inconsistent result after
+// apply" because the planned base url differs from the read-back tokenized url.
+// A url without the fragment is returned unchanged.
+func consoleURLBase(url string) string {
+	if i := strings.Index(url, "/#/client/"); i != -1 {
+		return url[:i]
+	}
+	return url
+}
+
+// userIDValue mirrors the SDKv1 behavior of sending a nil user_id when empty.
+func userIDValue(v types.String) interface{} {
+	if v.IsNull() || v.IsUnknown() || v.ValueString() == "" {
 		return nil
 	}
+	return v.ValueString()
+}
 
-	log.Printf("! In delete function, calling delete API wrapper")
-	// We can return the result of the function call directly because it is nil on success or some error value on failure
-	return api.DeleteVM(id, casted)
+// stringsDifference returns elements present in a but not in b.
+func stringsDifference(a, b []string) []string {
+	set := make(map[string]struct{}, len(b))
+	for _, s := range b {
+		set[s] = struct{}{}
+	}
+	out := []string{}
+	for _, s := range a {
+		if _, ok := set[s]; !ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// proxmoxIDPlanModifier replicates the SDKv1 DiffSuppressFunc on the proxmox
+// id: the API stores a bare integer id, but the proxmox provider supplies it as
+// "{node}/{type}/{id}". When the configured value is the composite form whose
+// trailing token matches the stored id, no change is planned.
+type proxmoxIDPlanModifier struct{}
+
+func (m proxmoxIDPlanModifier) Description(_ context.Context) string {
+	return "Suppresses diffs when the configured composite proxmox id matches the stored id."
+}
+
+func (m proxmoxIDPlanModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m proxmoxIDPlanModifier) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.StateValue.IsNull() || req.StateValue.IsUnknown() {
+		return
+	}
+	old := req.StateValue.ValueString()
+	newVal := req.PlanValue.ValueString()
+	tokens := strings.Split(newVal, "/")
+	if len(tokens) == 3 && tokens[2] == old {
+		resp.PlanValue = req.StateValue
+	}
 }
