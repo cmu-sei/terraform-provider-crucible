@@ -47,7 +47,7 @@ data "crucible_player_application_template" "by_name_ci" {
 			{
 				Config: tfConfig(config),
 				Check: resource.ComposeTestCheckFunc(
-					captureID("crucible_player_application_template.test", "", &templateID),
+					captureID("crucible_player_application_template.test", &templateID),
 					// Exact, case-sensitive lookup resolves to the backing resource's id.
 					resource.TestCheckResourceAttrPair(
 						"data.crucible_player_application_template.by_name", "id",

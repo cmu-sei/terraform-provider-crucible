@@ -186,19 +186,14 @@ func vlanLabel(number int) string {
 }
 
 // captureID returns a TestCheckFunc that records a resource's Terraform state id
-// into out, so cleanup can delete it even after state is gone. attrKey selects
-// which attribute to capture ("" => the resource's primary id).
-func captureID(res, attrKey string, out *string) resource.TestCheckFunc {
+// into out, so cleanup can delete it even after state is gone.
+func captureID(res string, out *string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[res]
 		if !ok {
 			return nil // resource not in state (e.g. step errored) — nothing to capture
 		}
-		if attrKey == "" {
-			*out = rs.Primary.ID
-		} else {
-			*out = rs.Primary.Attributes[attrKey]
-		}
+		*out = rs.Primary.ID
 		return nil
 	}
 }
