@@ -8,7 +8,7 @@ description: |-
 
 Looks up an application template in Crucible's Player API by name and exposes its `id` (and other fields). Use this to reference an existing template by its friendly name instead of hardcoding its UUID, for example when wiring an `application` block inside a `crucible_player_view`.
 
-The Player API does not provide a lookup-by-name endpoint, so this data source lists all templates and filters client-side. Template names are not guaranteed to be unique; if more than one template matches the given name, the lookup fails. It also fails if no template matches.
+Template names are not guaranteed to be unique; if more than one template matches the given name, the lookup fails. It also fails if no template matches.
 
 ## Example Usage
 
