@@ -39,7 +39,7 @@ func TestAccAppTemplate(t *testing.T) {
 			{
 				Config: tfConfig(configAppTemplate),
 				Check: resource.ComposeTestCheckFunc(
-					captureID("crucible_player_application_template.test", "", &templateID),
+					captureID("crucible_player_application_template.test", &templateID),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "name", "TestTemplate"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "url", "http://example.com"),
 					resource.TestCheckResourceAttr("crucible_player_application_template.test", "icon", "https://upload.wikimedia.org/wikipedia/en/thumb/9/9e/Buffalo_Sabres_Logo.svg/1200px-Buffalo_Sabres_Logo.svg.png"),
@@ -85,7 +85,7 @@ func TestAccAppTemplateOmittedFieldsStable(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config: tfConfig(appTemplateMinimalConfig("acc-min-template")),
-				Check:  captureID("crucible_player_application_template.minimal", "", &templateID),
+				Check:  captureID("crucible_player_application_template.minimal", &templateID),
 			},
 			{
 				// Edit name (a sibling); the omitted url/icon/embeddable/
@@ -125,7 +125,7 @@ func TestAccAppTemplateDetectsExternalDelete(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config: tfConfig(appTemplateMinimalConfig("acc-extdel-template")),
-				Check:  captureID("crucible_player_application_template.minimal", "", &templateID),
+				Check:  captureID("crucible_player_application_template.minimal", &templateID),
 			},
 			{
 				// Delete the template out of band, then re-plan the same config.

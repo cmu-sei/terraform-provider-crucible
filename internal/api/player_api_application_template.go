@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -159,6 +160,63 @@ func AppTemplateExists(id string, m map[string]string) (bool, error) {
 	}
 	// The current API returns 200 with an empty body for a missing template.
 	return resp.JSON200 != nil, nil
+}
+
+// AppTemplateFindByName returns the id and provider-facing model of the
+// application template whose name matches the given name. The Player API has no
+// get-by-name endpoint, so this lists all templates and filters client-side.
+// Player does not enforce unique template names, so this errors if more than one
+// matches; it also errors if none match. When caseInsensitive is true, matching
+// uses strings.EqualFold.
+//
+// The id is returned separately because structs.AppTemplate does not carry it.
+func AppTemplateFindByName(name string, caseInsensitive bool, m map[string]string) (string, *structs.AppTemplate, error) {
+	client, err := playerclient.NewAuthed(m)
+	if err != nil {
+		return "", nil, err
+	}
+
+	resp, err := client.GetApplicationTemplatesWithResponse(context.Background())
+	if err != nil {
+		return "", nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", nil, fmt.Errorf("player API returned with status code %d when listing templates", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return "", nil, fmt.Errorf("player API returned status 200 with no body when listing templates")
+	}
+
+	match, err := matchAppTemplateByName(*resp.JSON200, name, caseInsensitive)
+	if err != nil {
+		return "", nil, err
+	}
+	if match.Id == nil {
+		return "", nil, fmt.Errorf("player API returned a template with no id")
+	}
+	return match.Id.String(), fromAppTemplate(match), nil
+}
+
+// matchAppTemplateByName returns the single template whose name matches; it
+// errors when zero or more than one match. Kept separate from the HTTP call so
+// the 0/1/many and case-insensitive logic can be unit tested without a server.
+func matchAppTemplateByName(templates []playerclient.ApplicationTemplate, name string, caseInsensitive bool) (*playerclient.ApplicationTemplate, error) {
+	var matches []playerclient.ApplicationTemplate
+	for _, t := range templates {
+		tName := derefStr(t.Name)
+		if (caseInsensitive && strings.EqualFold(tName, name)) || tName == name {
+			matches = append(matches, t)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("no application template found with name %q", name)
+	case 1:
+		return &matches[0], nil
+	default:
+		return nil, fmt.Errorf("found %d application templates with name %q; names are not unique, look up by id instead", len(matches), name)
+	}
 }
 
 // fromAppTemplate maps a generated ApplicationTemplate onto the provider struct.

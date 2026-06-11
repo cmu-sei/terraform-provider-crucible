@@ -17,6 +17,10 @@ The Crucible provider enables [Terraform](https://www.terraform.io/) to manage r
 - [`crucible_player_view_network`](resources/player_view_network.md) — Manage allowed team networks in the VM API
 - [`crucible_vlan`](resources/vlan.md) — Acquire and release VLANs in the Caster API
 
+## Data Sources
+
+- [`crucible_player_application_template`](data-sources/player_application_template.md) — Look up an application template by name in the Player API
+
 ## Authentication
 
 The provider authenticates using OAuth2 resource owner password credentials. Credentials can be supplied via environment variables or directly in the provider block.
