@@ -76,7 +76,7 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 - `team_id` - (Computed) The UUID of this team, assigned by the API.
 - `role` - (Optional) The name of the role this team falls under. Defaults to `"View Member"`.
 - `permissions` - (Optional) A list of permission IDs for this team.
-- `scoped_teams` - (Optional) An unordered set of sibling team names onto which this team's permissions are scoped. Targets must be other `team` blocks in this view; a team cannot target itself. When omitted, Terraform reports but does not manage existing API scope relationships. Set it to `[]` to remove all scopes from the team.
+- `scoped_teams` - (Optional) An unordered set of sibling team names onto which this team's permissions are scoped. Targets must be other `team` blocks in this view; a team cannot target itself. Defaults to `[]`. Terraform manages the complete set and removes API scope relationships not listed here.
 
 #### `user` block (nested inside `team`)
 

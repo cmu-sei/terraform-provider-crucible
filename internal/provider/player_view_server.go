@@ -22,7 +22,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -189,10 +189,9 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 							Optional:    true,
 							Computed:    true,
 							ElementType: types.StringType,
-							PlanModifiers: []planmodifier.Set{
-								setplanmodifier.UseStateForUnknown(),
-								unknownSetIfNull{},
-							},
+							Default: setdefault.StaticValue(
+								types.SetValueMust(types.StringType, []attr.Value{}),
+							),
 						},
 					},
 					Blocks: map[string]schema.Block{
@@ -249,14 +248,13 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 }
 
 func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var config, plan viewModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	var plan viewModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	scopes, diags := configuredTeamScopes(ctx, config.Team)
+	scopes, diags := desiredTeamScopes(ctx, plan.Team)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -335,15 +333,14 @@ func (r *viewResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 }
 
 func (r *viewResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var config, plan, state viewModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	var plan, state viewModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	scopes, diags := configuredTeamScopes(ctx, config.Team)
+	scopes, diags := desiredTeamScopes(ctx, plan.Team)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -610,10 +607,9 @@ func childRankByAttr(list types.List, attrName string) map[string]int {
 	return rank
 }
 
-// configuredTeamScopes returns only scope sets explicitly present in
-// configuration. Omitted Optional+Computed sets are intentionally excluded so
-// Terraform observes, but does not overwrite, relationships managed elsewhere.
-func configuredTeamScopes(ctx context.Context, teams types.List) (map[string][]string, diag.Diagnostics) {
+// desiredTeamScopes returns the complete outgoing scope set for every planned
+// team. The schema defaults omitted scoped_teams attributes to an empty set.
+func desiredTeamScopes(ctx context.Context, teams types.List) (map[string][]string, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	scopes := make(map[string][]string)
 	if teams.IsNull() || teams.IsUnknown() {
@@ -641,7 +637,13 @@ func configuredTeamScopes(ctx context.Context, teams types.List) (map[string][]s
 		nameCounts[teamName]++
 
 		targets, ok := attrs["scoped_teams"].(types.Set)
-		if !ok || targets.IsNull() || targets.IsUnknown() {
+		if !ok || targets.IsNull() {
+			targets = types.SetValueMust(types.StringType, []attr.Value{})
+		} else if targets.IsUnknown() {
+			diags.AddError(
+				"Unknown scoped teams",
+				fmt.Sprintf("Team %q has an unknown scoped_teams value during apply.", teamName),
+			)
 			continue
 		}
 		configured = append(configured, configuredTeam{name: teamName, targets: targets})
@@ -651,7 +653,7 @@ func configuredTeamScopes(ctx context.Context, teams types.List) (map[string][]s
 		if nameCounts[team.name] != 1 {
 			diags.AddError(
 				"Ambiguous scoped team source",
-				fmt.Sprintf("Team %q configures scoped_teams but its name is not unique within the view.", team.name),
+				fmt.Sprintf("Team %q cannot manage scoped_teams because its name is not unique within the view.", team.name),
 			)
 			continue
 		}

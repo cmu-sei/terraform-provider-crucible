@@ -194,50 +194,6 @@ func TestUnknownIfNull_Descriptions(t *testing.T) {
 	}
 }
 
-func TestUnknownSetIfNull_PlanModifySet(t *testing.T) {
-	ctx := context.Background()
-
-	tests := []struct {
-		name        string
-		plan        types.Set
-		wantUnknown bool
-		wantLength  int
-	}{
-		{name: "null becomes unknown", plan: types.SetNull(types.StringType), wantUnknown: true},
-		{name: "empty set stays known", plan: stringSet(t), wantLength: 0},
-		{name: "populated set stays known", plan: stringSet(t, "target"), wantLength: 1},
-		{name: "unknown stays unknown", plan: types.SetUnknown(types.StringType), wantUnknown: true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			req := planmodifier.SetRequest{PlanValue: tc.plan}
-			resp := &planmodifier.SetResponse{PlanValue: tc.plan}
-
-			unknownSetIfNull{}.PlanModifySet(ctx, req, resp)
-
-			if got := resp.PlanValue.IsUnknown(); got != tc.wantUnknown {
-				t.Fatalf("IsUnknown() = %v, want %v (resp=%v)", got, tc.wantUnknown, resp.PlanValue)
-			}
-			if !tc.wantUnknown && len(resp.PlanValue.Elements()) != tc.wantLength {
-				t.Fatalf("len(Elements()) = %d, want %d", len(resp.PlanValue.Elements()), tc.wantLength)
-			}
-		})
-	}
-}
-
-func TestUnknownSetIfNull_Descriptions(t *testing.T) {
-	ctx := context.Background()
-	m := unknownSetIfNull{}
-	want := "Marks the set unknown when it would otherwise plan as null."
-	if got := m.Description(ctx); got != want {
-		t.Errorf("Description() = %q, want %q", got, want)
-	}
-	if got := m.MarkdownDescription(ctx); got != want {
-		t.Errorf("MarkdownDescription() = %q, want %q", got, want)
-	}
-}
-
 // --- nameLess ---
 
 func TestNameLess(t *testing.T) {
@@ -372,7 +328,7 @@ func TestTeamChildRanks(t *testing.T) {
 	})
 }
 
-func TestConfiguredTeamScopes(t *testing.T) {
+func TestDesiredTeamScopes(t *testing.T) {
 	ctx := context.Background()
 
 	team := func(name string, scopes types.Set) types.Object {
@@ -400,27 +356,27 @@ func TestConfiguredTeamScopes(t *testing.T) {
 		return list
 	}
 
-	t.Run("returns only explicitly configured scopes", func(t *testing.T) {
-		got, diags := configuredTeamScopes(ctx, teams(
+	t.Run("includes every team", func(t *testing.T) {
+		got, diags := desiredTeamScopes(ctx, teams(
 			team("source", stringSet(t, "target")),
 			team("target", types.SetNull(types.StringType)),
 		))
 		if diags.HasError() {
 			t.Fatalf("unexpected diagnostics: %v", diags)
 		}
-		if len(got) != 1 || len(got["source"]) != 1 || got["source"][0] != "target" {
-			t.Fatalf("configuredTeamScopes() = %v, want source -> target", got)
+		if len(got) != 2 || len(got["source"]) != 1 || got["source"][0] != "target" || len(got["target"]) != 0 {
+			t.Fatalf("desiredTeamScopes() = %v, want source -> target and managed empty target", got)
 		}
 	})
 
 	t.Run("explicit empty set remains managed", func(t *testing.T) {
-		got, diags := configuredTeamScopes(ctx, teams(team("source", stringSet(t))))
+		got, diags := desiredTeamScopes(ctx, teams(team("source", stringSet(t))))
 		if diags.HasError() {
 			t.Fatalf("unexpected diagnostics: %v", diags)
 		}
 		targets, ok := got["source"]
 		if !ok || len(targets) != 0 {
-			t.Fatalf("configuredTeamScopes() = %v, want managed empty source", got)
+			t.Fatalf("desiredTeamScopes() = %v, want managed empty source", got)
 		}
 	})
 
@@ -447,7 +403,7 @@ func TestConfiguredTeamScopes(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, diags := configuredTeamScopes(ctx, tc.teams)
+			_, diags := desiredTeamScopes(ctx, tc.teams)
 			if !diags.HasError() {
 				t.Fatal("expected validation error")
 			}

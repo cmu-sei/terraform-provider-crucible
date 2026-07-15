@@ -197,8 +197,8 @@ func TestAccViewWithScopedTeams(t *testing.T) {
 			},
 			{
 				// Add a target team whose scoped_teams is omitted, while the
-				// existing source starts targeting it. The new team's computed
-				// empty set must be unknown in the plan rather than null.
+				// existing source starts targeting it. The defaulted empty set
+				// must remain consistent with the empty set returned by Read.
 				Config: tfConfig(scopedTeamsViewConfig("target-added", `["scope-target"]`, "")),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.#", "2"),
@@ -230,26 +230,31 @@ func TestAccViewWithScopedTeams(t *testing.T) {
 				},
 			},
 			{
-				// Omit both sets to relinquish ownership, then change the API
-				// relationship after apply. The next unrelated update must adopt
-				// and preserve that remote state.
-				Config: tfConfig(scopedTeamsViewConfig("unmanaged", "", "")),
+				// Omission means an authoritative empty set. Introduce remote
+				// drift after apply so the next step verifies its removal.
+				Config: tfConfig(scopedTeamsViewConfig("drift", "", "")),
 				Check: testAccSetRemoteTeamScopes(map[string][]string{
 					"scope-source": {"scope-target"},
 					"scope-target": {},
 				}),
+				ExpectNonEmptyPlan: true,
 			},
 			{
-				Config: tfConfig(scopedTeamsViewConfig("unmanaged-updated", "", "")),
+				Config: tfConfig(scopedTeamsViewConfig("drift-corrected", "", "")),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.0.scoped_teams.#", "1"),
-					resource.TestCheckTypeSetElemAttr(scopedTeamsResourceName, "team.0.scoped_teams.*", "scope-target"),
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.0.scoped_teams.#", "0"),
 					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.1.scoped_teams.#", "0"),
 					testAccVerifyRemoteTeamScopes(map[string][]string{
-						"scope-source": {"scope-target"},
+						"scope-source": {},
 						"scope-target": {},
 					}),
 				),
+			},
+			{
+				Config: tfConfig(scopedTeamsViewConfig("drift-corrected", "", "")),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
 			},
 		},
 	})
