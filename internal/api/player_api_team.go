@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/google/uuid"
 
@@ -173,6 +174,105 @@ func UpdateTeamPermissions(toAdd, toRemove map[string][]string, m map[string]str
 	return nil
 }
 
+// UpdateTeamScopes reconciles the complete outgoing scope set for each named
+// source team. Team names are resolved only after team CRUD has completed, when
+// all server-assigned ids are available.
+func UpdateTeamScopes(viewID string, desired map[string][]string, m map[string]string) error {
+	if len(desired) == 0 {
+		return nil
+	}
+
+	client, err := playerclient.NewAuthed(m)
+	if err != nil {
+		return err
+	}
+	vID, err := uuid.Parse(viewID)
+	if err != nil {
+		return err
+	}
+	resp, err := client.GetViewTeamsWithResponse(context.Background(), vID)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("player API returned with status code %d when resolving scoped teams", resp.StatusCode())
+	}
+	if resp.JSON200 == nil {
+		return fmt.Errorf("player API returned status 200 with no teams when resolving scoped teams")
+	}
+
+	byName := make(map[string][]playerclient.Team)
+	for _, team := range *resp.JSON200 {
+		byName[derefStr(team.Name)] = append(byName[derefStr(team.Name)], team)
+	}
+
+	sourceNames := make([]string, 0, len(desired))
+	for sourceName := range desired {
+		sourceNames = append(sourceNames, sourceName)
+	}
+	sort.Strings(sourceNames)
+
+	for _, sourceName := range sourceNames {
+		sources := byName[sourceName]
+		if len(sources) != 1 || sources[0].Id == nil {
+			return fmt.Errorf("scoped team source %q resolved to %d teams; expected exactly one", sourceName, len(sources))
+		}
+		source := sources[0]
+
+		desiredIDs := make(map[uuid.UUID]struct{}, len(desired[sourceName]))
+		for _, targetName := range desired[sourceName] {
+			targets := byName[targetName]
+			if len(targets) != 1 || targets[0].Id == nil {
+				return fmt.Errorf("scoped team target %q resolved to %d teams; expected exactly one", targetName, len(targets))
+			}
+			desiredIDs[*targets[0].Id] = struct{}{}
+		}
+
+		currentIDs := make(map[uuid.UUID]struct{})
+		if source.ScopedTeamIds != nil {
+			for _, id := range *source.ScopedTeamIds {
+				currentIDs[id] = struct{}{}
+			}
+		}
+
+		toAdd := uuidDifference(desiredIDs, currentIDs)
+		toRemove := uuidDifference(currentIDs, desiredIDs)
+		for _, targetID := range toAdd {
+			scopeResp, err := client.AddTeamPermissionScopeWithResponse(context.Background(), *source.Id, targetID)
+			if err != nil {
+				return err
+			}
+			if scopeResp.StatusCode() != http.StatusOK {
+				return fmt.Errorf("player API returned with status code %d when adding scope from team %q", scopeResp.StatusCode(), sourceName)
+			}
+		}
+		for _, targetID := range toRemove {
+			scopeResp, err := client.RemoveTeamPermissionScopeWithResponse(context.Background(), *source.Id, targetID)
+			if err != nil {
+				return err
+			}
+			if scopeResp.StatusCode() != http.StatusOK {
+				return fmt.Errorf("player API returned with status code %d when removing scope from team %q", scopeResp.StatusCode(), sourceName)
+			}
+		}
+	}
+
+	return nil
+}
+
+func uuidDifference(a, b map[uuid.UUID]struct{}) []uuid.UUID {
+	out := make([]uuid.UUID, 0)
+	for id := range a {
+		if _, ok := b[id]; !ok {
+			out = append(out, id)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].String() < out[j].String()
+	})
+	return out
+}
+
 // GetRoleByID returns the name of the role with the given id.
 func GetRoleByID(role string, m map[string]string) (string, error) {
 	client, err := playerclient.NewAuthed(m)
@@ -274,6 +374,13 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 		return teams, nil
 	}
 
+	teamNamesByID := make(map[uuid.UUID]string, len(*resp.JSON200))
+	for _, team := range *resp.JSON200 {
+		if team.Id != nil {
+			teamNamesByID[*team.Id] = derefStr(team.Name)
+		}
+	}
+
 	for _, t := range *resp.JSON200 {
 		// Leave permissions nil (not an empty slice) when there are none: the
 		// resource distinguishes a null permissions list from an empty one, and
@@ -286,10 +393,22 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 				}
 			}
 		}
+		var scopedTeams []string
+		if t.ScopedTeamIds != nil {
+			for _, targetID := range *t.ScopedTeamIds {
+				targetName, ok := teamNamesByID[targetID]
+				if !ok {
+					return nil, fmt.Errorf("team %q scopes permissions onto unknown team id %s", derefStr(t.Name), targetID)
+				}
+				scopedTeams = append(scopedTeams, targetName)
+			}
+			sort.Strings(scopedTeams)
+		}
 		info := structs.TeamInfo{
 			Name:        derefStr(t.Name),
 			Role:        derefStr(t.RoleName),
 			Permissions: permissions,
+			ScopedTeams: scopedTeams,
 		}
 		if t.Id != nil {
 			info.ID = t.Id.String()

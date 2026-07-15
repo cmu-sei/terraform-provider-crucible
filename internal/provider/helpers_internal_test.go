@@ -89,6 +89,19 @@ func stringList(t *testing.T, ss ...string) types.List {
 	return l
 }
 
+func stringSet(t *testing.T, ss ...string) types.Set {
+	t.Helper()
+	vals := make([]attr.Value, 0, len(ss))
+	for _, s := range ss {
+		vals = append(vals, types.StringValue(s))
+	}
+	set, d := types.SetValue(types.StringType, vals)
+	if d.HasError() {
+		t.Fatalf("building string set: %v", d)
+	}
+	return set
+}
+
 // namedBlockList builds a list of objects that have a "name" attribute, mirroring the
 // shape blockNameRank consumes. Uses the user attr types but only the relevant key.
 func namedBlockList(t *testing.T, attrTypes map[string]attr.Type, names ...string) types.List {
@@ -124,6 +137,8 @@ func newNullValue(at attr.Type) attr.Value {
 	switch t := at.(type) {
 	case types.ListType:
 		return types.ListNull(t.ElemType)
+	case types.SetType:
+		return types.SetNull(t.ElemType)
 	case basetypes.Float64Type:
 		return types.Float64Null()
 	default:
@@ -171,6 +186,50 @@ func TestUnknownIfNull_Descriptions(t *testing.T) {
 	ctx := context.Background()
 	m := unknownIfNull{}
 	want := "Marks the value unknown when it would otherwise plan as null."
+	if got := m.Description(ctx); got != want {
+		t.Errorf("Description() = %q, want %q", got, want)
+	}
+	if got := m.MarkdownDescription(ctx); got != want {
+		t.Errorf("MarkdownDescription() = %q, want %q", got, want)
+	}
+}
+
+func TestUnknownSetIfNull_PlanModifySet(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		plan        types.Set
+		wantUnknown bool
+		wantLength  int
+	}{
+		{name: "null becomes unknown", plan: types.SetNull(types.StringType), wantUnknown: true},
+		{name: "empty set stays known", plan: stringSet(t), wantLength: 0},
+		{name: "populated set stays known", plan: stringSet(t, "target"), wantLength: 1},
+		{name: "unknown stays unknown", plan: types.SetUnknown(types.StringType), wantUnknown: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := planmodifier.SetRequest{PlanValue: tc.plan}
+			resp := &planmodifier.SetResponse{PlanValue: tc.plan}
+
+			unknownSetIfNull{}.PlanModifySet(ctx, req, resp)
+
+			if got := resp.PlanValue.IsUnknown(); got != tc.wantUnknown {
+				t.Fatalf("IsUnknown() = %v, want %v (resp=%v)", got, tc.wantUnknown, resp.PlanValue)
+			}
+			if !tc.wantUnknown && len(resp.PlanValue.Elements()) != tc.wantLength {
+				t.Fatalf("len(Elements()) = %d, want %d", len(resp.PlanValue.Elements()), tc.wantLength)
+			}
+		})
+	}
+}
+
+func TestUnknownSetIfNull_Descriptions(t *testing.T) {
+	ctx := context.Background()
+	m := unknownSetIfNull{}
+	want := "Marks the set unknown when it would otherwise plan as null."
 	if got := m.Description(ctx); got != want {
 		t.Errorf("Description() = %q, want %q", got, want)
 	}
@@ -288,6 +347,7 @@ func TestTeamChildRanks(t *testing.T) {
 		"name":         types.StringValue("t1"),
 		"role":         types.StringValue(""),
 		"permissions":  stringList(t, "perm-a", "perm-b"),
+		"scoped_teams": types.SetNull(types.StringType),
 		"app_instance": instList(t, "inst-a"),
 		"user":         userList(t, "user-a", "user-b"),
 	})
@@ -310,6 +370,89 @@ func TestTeamChildRanks(t *testing.T) {
 			t.Fatalf("expected empty maps, got users=%v insts=%v perms=%v", u, i, p)
 		}
 	})
+}
+
+func TestConfiguredTeamScopes(t *testing.T) {
+	ctx := context.Background()
+
+	team := func(name string, scopes types.Set) types.Object {
+		t.Helper()
+		obj, d := types.ObjectValue(viewTeamAttrTypes, map[string]attr.Value{
+			"team_id":      types.StringNull(),
+			"name":         types.StringValue(name),
+			"role":         types.StringNull(),
+			"permissions":  types.ListNull(types.StringType),
+			"scoped_teams": scopes,
+			"app_instance": types.ListNull(types.ObjectType{AttrTypes: viewAppInstanceAttrTypes}),
+			"user":         types.ListNull(types.ObjectType{AttrTypes: viewUserAttrTypes}),
+		})
+		if d.HasError() {
+			t.Fatalf("building team object: %v", d)
+		}
+		return obj
+	}
+	teams := func(values ...attr.Value) types.List {
+		t.Helper()
+		list, d := types.ListValue(types.ObjectType{AttrTypes: viewTeamAttrTypes}, values)
+		if d.HasError() {
+			t.Fatalf("building team list: %v", d)
+		}
+		return list
+	}
+
+	t.Run("returns only explicitly configured scopes", func(t *testing.T) {
+		got, diags := configuredTeamScopes(ctx, teams(
+			team("source", stringSet(t, "target")),
+			team("target", types.SetNull(types.StringType)),
+		))
+		if diags.HasError() {
+			t.Fatalf("unexpected diagnostics: %v", diags)
+		}
+		if len(got) != 1 || len(got["source"]) != 1 || got["source"][0] != "target" {
+			t.Fatalf("configuredTeamScopes() = %v, want source -> target", got)
+		}
+	})
+
+	t.Run("explicit empty set remains managed", func(t *testing.T) {
+		got, diags := configuredTeamScopes(ctx, teams(team("source", stringSet(t))))
+		if diags.HasError() {
+			t.Fatalf("unexpected diagnostics: %v", diags)
+		}
+		targets, ok := got["source"]
+		if !ok || len(targets) != 0 {
+			t.Fatalf("configuredTeamScopes() = %v, want managed empty source", got)
+		}
+	})
+
+	tests := []struct {
+		name  string
+		teams types.List
+	}{
+		{
+			name:  "rejects self target",
+			teams: teams(team("source", stringSet(t, "source"))),
+		},
+		{
+			name:  "rejects missing target",
+			teams: teams(team("source", stringSet(t, "missing"))),
+		},
+		{
+			name: "rejects ambiguous target",
+			teams: teams(
+				team("source", stringSet(t, "target")),
+				team("target", types.SetNull(types.StringType)),
+				team("target", types.SetNull(types.StringType)),
+			),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diags := configuredTeamScopes(ctx, tc.teams)
+			if !diags.HasError() {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
 }
 
 // --- ifaceStr ---

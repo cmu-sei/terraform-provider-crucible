@@ -66,6 +66,25 @@ func (unknownIfNull) PlanModifyString(_ context.Context, req planmodifier.String
 	}
 }
 
+// unknownSetIfNull is the collection equivalent of unknownIfNull. A newly
+// added ListNestedBlock has no prior state, so an omitted Optional+Computed set
+// otherwise plans as null even though the API read returns an empty set.
+type unknownSetIfNull struct{}
+
+func (unknownSetIfNull) Description(_ context.Context) string {
+	return "Marks the set unknown when it would otherwise plan as null."
+}
+
+func (m unknownSetIfNull) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (unknownSetIfNull) PlanModifySet(ctx context.Context, _ planmodifier.SetRequest, resp *planmodifier.SetResponse) {
+	if resp.PlanValue.IsNull() {
+		resp.PlanValue = types.SetUnknown(resp.PlanValue.ElementType(ctx))
+	}
+}
+
 // toStringSlice converts a framework types.List of strings into a []string.
 // Null and unknown lists yield an empty (non-nil) slice so the value is safe to
 // hand to the api layer.
@@ -76,6 +95,18 @@ func toStringSlice(ctx context.Context, list types.List) ([]string, diag.Diagnos
 		return out, diags
 	}
 	diags = list.ElementsAs(ctx, &out, false)
+	return out, diags
+}
+
+// toStringSet converts a framework set of strings into a stable []string.
+func toStringSet(ctx context.Context, set types.Set) ([]string, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	out := []string{}
+	if set.IsNull() || set.IsUnknown() {
+		return out, diags
+	}
+	diags = set.ElementsAs(ctx, &out, false)
+	sort.Strings(out)
 	return out, diags
 }
 

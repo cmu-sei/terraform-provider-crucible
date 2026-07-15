@@ -26,6 +26,7 @@ resource "crucible_player_view" "example" {
   team {
     name = "test_team"
     role = "SomeRole"
+    scoped_teams = ["observer_team"]
 
     user {
       user_id = "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf"
@@ -35,6 +36,10 @@ resource "crucible_player_view" "example" {
       name          = "testApp"
       display_order = 0
     }
+  }
+
+  team {
+    name = "observer_team"
   }
 }
 ```
@@ -71,6 +76,7 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 - `team_id` - (Computed) The UUID of this team, assigned by the API.
 - `role` - (Optional) The name of the role this team falls under. Defaults to `"View Member"`.
 - `permissions` - (Optional) A list of permission IDs for this team.
+- `scoped_teams` - (Optional) An unordered set of sibling team names onto which this team's permissions are scoped. Targets must be other `team` blocks in this view; a team cannot target itself. When omitted, Terraform reports but does not manage existing API scope relationships. Set it to `[]` to remove all scopes from the team.
 
 #### `user` block (nested inside `team`)
 

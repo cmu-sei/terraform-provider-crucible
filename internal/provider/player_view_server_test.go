@@ -22,6 +22,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
+const (
+	scopedTeamsResourceName = "crucible_player_view.scoped"
+	scopedTeamsViewName     = "tf-acc-scoped-teams"
+)
+
 // Test case for creation and updating of an empty view. That is, one without any teams or applications inside of it
 
 // Execution steps:
@@ -170,6 +175,156 @@ func TestAccViewWithTeams(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestAccViewWithScopedTeams(t *testing.T) {
+	sweepViewByName(t, scopedTeamsViewName)
+	registerViewCleanupByName(t, scopedTeamsViewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig(scopedTeamsSourceOnlyViewConfig()),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.#", "1"),
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.0.scoped_teams.#", "0"),
+					testAccVerifyRemoteTeamScopes(map[string][]string{
+						"scope-source": {},
+					}),
+				),
+			},
+			{
+				// Add a target team whose scoped_teams is omitted, while the
+				// existing source starts targeting it. The new team's computed
+				// empty set must be unknown in the plan rather than null.
+				Config: tfConfig(scopedTeamsViewConfig("target-added", `["scope-target"]`, "")),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.#", "2"),
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.0.scoped_teams.#", "1"),
+					resource.TestCheckTypeSetElemAttr(scopedTeamsResourceName, "team.0.scoped_teams.*", "scope-target"),
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.1.scoped_teams.#", "0"),
+					testAccVerifyRemoteTeamScopes(map[string][]string{
+						"scope-source": {"scope-target"},
+						"scope-target": {},
+					}),
+				),
+			},
+			{
+				Config: tfConfig(scopedTeamsViewConfig("reversed", `[]`, `["scope-source"]`)),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.0.scoped_teams.#", "0"),
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.1.scoped_teams.#", "1"),
+					resource.TestCheckTypeSetElemAttr(scopedTeamsResourceName, "team.1.scoped_teams.*", "scope-source"),
+					testAccVerifyRemoteTeamScopes(map[string][]string{
+						"scope-source": {},
+						"scope-target": {"scope-source"},
+					}),
+				),
+			},
+			{
+				Config: tfConfig(scopedTeamsViewConfig("reversed", `[]`, `["scope-source"]`)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+			{
+				// Omit both sets to relinquish ownership, then change the API
+				// relationship after apply. The next unrelated update must adopt
+				// and preserve that remote state.
+				Config: tfConfig(scopedTeamsViewConfig("unmanaged", "", "")),
+				Check: testAccSetRemoteTeamScopes(map[string][]string{
+					"scope-source": {"scope-target"},
+					"scope-target": {},
+				}),
+			},
+			{
+				Config: tfConfig(scopedTeamsViewConfig("unmanaged-updated", "", "")),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.0.scoped_teams.#", "1"),
+					resource.TestCheckTypeSetElemAttr(scopedTeamsResourceName, "team.0.scoped_teams.*", "scope-target"),
+					resource.TestCheckResourceAttr(scopedTeamsResourceName, "team.1.scoped_teams.#", "0"),
+					testAccVerifyRemoteTeamScopes(map[string][]string{
+						"scope-source": {"scope-target"},
+						"scope-target": {},
+					}),
+				),
+			},
+		},
+	})
+}
+
+func scopedTeamsSourceOnlyViewConfig() string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "scoped" {
+  name              = %q
+  description       = "source-only"
+  create_admin_team = true
+
+  team {
+    name = "scope-source"
+  }
+}
+`, scopedTeamsViewName)
+}
+
+func scopedTeamsViewConfig(description, sourceScopes, targetScopes string) string {
+	scopeAttribute := func(value string) string {
+		if value == "" {
+			return ""
+		}
+		return "\n    scoped_teams = " + value
+	}
+
+	return fmt.Sprintf(`
+resource "crucible_player_view" "scoped" {
+  name              = %q
+  description       = %q
+  create_admin_team = true
+
+  team {
+    name = "scope-source"%s
+  }
+
+  team {
+    name = "scope-target"%s
+  }
+}
+`, scopedTeamsViewName, description, scopeAttribute(sourceScopes), scopeAttribute(targetScopes))
+}
+
+func testAccVerifyRemoteTeamScopes(expected map[string][]string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[scopedTeamsResourceName]
+		if !ok {
+			return fmt.Errorf("resource %s not found", scopedTeamsResourceName)
+		}
+		view, err := api.ReadView(rs.Primary.ID, getMap())
+		if err != nil {
+			return err
+		}
+		actual := make(map[string][]string)
+		for _, team := range view.Teams {
+			actual[ifaceString(team.Name)] = team.ScopedTeams
+		}
+		for teamName, expectedTargets := range expected {
+			if !sameStringSet(actual[teamName], expectedTargets) {
+				return fmt.Errorf("remote scoped teams for %q = %v, want %v", teamName, actual[teamName], expectedTargets)
+			}
+		}
+		return nil
+	}
+}
+
+func testAccSetRemoteTeamScopes(scopes map[string][]string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[scopedTeamsResourceName]
+		if !ok {
+			return fmt.Errorf("resource %s not found", scopedTeamsResourceName)
+		}
+		return api.UpdateTeamScopes(rs.Primary.ID, scopes, getMap())
+	}
 }
 
 // Test case for a view with teams and users inside those teams
@@ -452,6 +607,10 @@ func testAccVerifyLocalView(viewName string, view *structs.ViewInfo) resource.Te
 						return fmt.Errorf("local permission %s did not match expected permission %s for team %d", local[locPerm], perm, i)
 					}
 				}
+				scopedTeamsCount := "team." + strconv.Itoa(i) + ".scoped_teams.#"
+				if local[scopedTeamsCount] != strconv.Itoa(len(team.ScopedTeams)) {
+					return fmt.Errorf("local scoped team count %s did not match expected %d for team %d", local[scopedTeamsCount], len(team.ScopedTeams), i)
+				}
 
 				expectedName := util.Ternary(team.Name == nil, "null", team.Name)
 				if local[name] != expectedName {
@@ -565,7 +724,8 @@ func testAccVerifyRemoteView(view *structs.ViewInfo) resource.TestCheckFunc {
 			// Permissions come back from the API in arbitrary order; compare as
 			// sets. The team Role is resolved to a name by ReadView.
 			if ifaceString(team.Name) != ifaceString(view.Teams[i].Name) || ifaceString(team.Role) != ifaceString(view.Teams[i].Role) ||
-				!sameStringSet(team.Permissions, view.Teams[i].Permissions) {
+				!sameStringSet(team.Permissions, view.Teams[i].Permissions) ||
+				!sameStringSet(team.ScopedTeams, view.Teams[i].ScopedTeams) {
 				return fmt.Errorf("expected does not equal actual remote state for team %d", i)
 			}
 
