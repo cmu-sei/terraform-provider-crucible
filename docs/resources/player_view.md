@@ -16,6 +16,48 @@ Manages views in Crucible's Player API, including the teams and applications wit
 
 ## Example Usage
 
+### Standalone Child Management
+
+```hcl
+resource "crucible_player_view" "example" {
+  name              = "example"
+  create_admin_team = false
+  child_management  = "standalone"
+}
+
+resource "crucible_player_application" "terminal" {
+  view_id = crucible_player_view.example.id
+  name    = "terminal"
+  url     = "https://terminal.example.test"
+}
+
+resource "crucible_player_team" "students" {
+  view_id = crucible_player_view.example.id
+  name    = "students"
+}
+
+resource "crucible_player_view_default_team" "students" {
+  view_id = crucible_player_view.example.id
+  team_id = crucible_player_team.students.id
+}
+
+resource "crucible_player_application_instance" "terminal" {
+  team_id        = crucible_player_team.students.id
+  application_id = crucible_player_application.terminal.id
+  display_order  = 0
+}
+```
+
+The provider cannot verify that a standalone child targets a view configured
+for standalone ownership. Ensure all standalone children target a view with
+`child_management = "standalone"`.
+
+Deleting a view cascades to its applications, teams, memberships, and
+application instances in the Player API even in standalone mode. Use Terraform
+references so child resources are destroyed before their view.
+
+### Inline Child Management
+
 ```hcl
 resource "crucible_player_view" "example" {
   name              = "example"
@@ -105,44 +147,6 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 ## Attribute Reference
 
 - `id` - The UUID of the view.
-
-## Standalone Child Management
-
-```hcl
-resource "crucible_player_view" "example" {
-  name              = "example"
-  create_admin_team = false
-  child_management  = "standalone"
-}
-
-resource "crucible_player_application" "terminal" {
-  view_id = crucible_player_view.example.id
-  name    = "terminal"
-  url     = "https://terminal.example.test"
-}
-
-resource "crucible_player_team" "students" {
-  view_id = crucible_player_view.example.id
-  name    = "students"
-}
-
-resource "crucible_player_view_default_team" "students" {
-  view_id = crucible_player_view.example.id
-  team_id = crucible_player_team.students.id
-}
-
-resource "crucible_player_application_instance" "terminal" {
-  team_id        = crucible_player_team.students.id
-  application_id = crucible_player_application.terminal.id
-  display_order  = 0
-}
-```
-
-The provider cannot verify that a standalone child targets a view configured
-for standalone ownership. Ensure all standalone children target a view with
-`child_management = "standalone"`.
-
-Deleting a view cascades to its applications, teams, memberships, and application instances in the Player API even in standalone mode. Use Terraform references so child resources are destroyed before their view.
 
 ## Migrating Inline Children
 
