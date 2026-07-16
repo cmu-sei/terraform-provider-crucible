@@ -60,7 +60,7 @@ func (r *playerTeamResource) Schema(_ context.Context, _ resource.SchemaRequest,
 		}
 	}
 	resp.Schema = schema.Schema{
-		Description: "Manages one team in a separately managed Player view.",
+		Description: "Manages one team in a Player view configured for standalone child management.",
 		Attributes: map[string]schema.Attribute{
 			"id":      computedIDAttribute(),
 			"view_id": requiredUUIDAttribute("UUID of the owning Player view."),

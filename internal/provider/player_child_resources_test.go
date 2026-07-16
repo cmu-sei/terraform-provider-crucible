@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
-func TestAccViewSeparateValidation(t *testing.T) {
+func TestAccViewStandaloneValidation(t *testing.T) {
 	tests := map[string]string{
 		"application": `
   create_admin_team = false
@@ -36,8 +36,8 @@ func TestAccViewSeparateValidation(t *testing.T) {
 				Steps: []resource.TestStep{{
 					Config: tfConfig(fmt.Sprintf(`
 resource "crucible_player_view" "invalid" {
-  name             = "tf-acc-invalid-separate"
-  child_management = "separate"
+  name             = "tf-acc-invalid-standalone"
+  child_management = "standalone"
 %s
 }`, body)),
 					PlanOnly:    true,
@@ -48,8 +48,25 @@ resource "crucible_player_view" "invalid" {
 	}
 }
 
-func TestAccSeparatePlayerChildren(t *testing.T) {
-	viewName := "tf-acc-separate-children"
+func TestAccViewSeparateModeRejected(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{{
+			Config: tfConfig(`
+resource "crucible_player_view" "invalid" {
+  name              = "tf-acc-invalid-separate-mode"
+  create_admin_team = false
+  child_management  = "separate"
+}
+`),
+			PlanOnly:    true,
+			ExpectError: regexp.MustCompile(`Invalid Attribute Value Match`),
+		}},
+	})
+}
+
+func TestAccStandalonePlayerChildren(t *testing.T) {
+	viewName := "tf-acc-standalone-children"
 	userID := envOrDefault("TF_TEST_VIEW_USER_ID", "9b3b331c-10c1-448b-8114-21b2586d8e38")
 	sweepViewByName(t, viewName)
 	registerViewCleanupByName(t, viewName)
@@ -59,9 +76,9 @@ func TestAccSeparatePlayerChildren(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(separateChildrenConfig(viewName, userID, false)),
+				Config: tfConfig(standaloneChildrenConfig(viewName, userID, false)),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("crucible_player_view.separate", "child_management", "separate"),
+					resource.TestCheckResourceAttr("crucible_player_view.standalone", "child_management", "standalone"),
 					resource.TestCheckResourceAttr("crucible_player_application.terminal", "name", "terminal"),
 					resource.TestCheckResourceAttrSet("crucible_player_application.terminal", "id"),
 					resource.TestCheckResourceAttr("crucible_player_team.students", "permissions.#", "0"),
@@ -71,7 +88,7 @@ func TestAccSeparatePlayerChildren(t *testing.T) {
 				),
 			},
 			{
-				Config: tfConfig(separateChildrenConfig(viewName, userID, true)),
+				Config: tfConfig(standaloneChildrenConfig(viewName, userID, true)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_application.terminal", "name", "terminal-updated"),
 					resource.TestCheckResourceAttr("crucible_player_team.students", "name", "students-updated"),
@@ -80,7 +97,7 @@ func TestAccSeparatePlayerChildren(t *testing.T) {
 				),
 			},
 			{
-				Config: tfConfig(separateChildrenConfig(viewName, userID, true)),
+				Config: tfConfig(standaloneChildrenConfig(viewName, userID, true)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 				},
@@ -114,21 +131,21 @@ func TestAccSeparatePlayerChildren(t *testing.T) {
 	})
 }
 
-func separateChildrenConfig(viewName, userID string, updated bool) string {
+func standaloneChildrenConfig(viewName, userID string, updated bool) string {
 	appName, teamName, role, order := "terminal", "students", "", 0
 	if updated {
 		appName, teamName, role, order = "terminal-updated", "students-updated", "\n  role = \"View Member\"", 2
 	}
 	return fmt.Sprintf(`
-resource "crucible_player_view" "separate" {
+resource "crucible_player_view" "standalone" {
   name              = %[1]q
   description       = "standalone children"
   create_admin_team = false
-  child_management  = "separate"
+  child_management  = "standalone"
 }
 
 resource "crucible_player_application" "terminal" {
-  view_id            = crucible_player_view.separate.id
+  view_id            = crucible_player_view.standalone.id
   name               = %[2]q
   url                = "https://terminal.example.test"
   embeddable         = false
@@ -136,12 +153,12 @@ resource "crucible_player_application" "terminal" {
 }
 
 resource "crucible_player_team" "students" {
-  view_id = crucible_player_view.separate.id
+  view_id = crucible_player_view.standalone.id
   name    = %[3]q
 }
 
 resource "crucible_player_team_user" "student" {
-  view_id = crucible_player_view.separate.id
+  view_id = crucible_player_view.standalone.id
   team_id = crucible_player_team.students.id
   user_id = %[4]q%[5]s
 }
@@ -154,8 +171,8 @@ resource "crucible_player_application_instance" "terminal" {
 `, viewName, appName, teamName, userID, role, order)
 }
 
-func TestAccSeparateViewIgnoresUnmanagedChildren(t *testing.T) {
-	viewName := "tf-acc-separate-unmanaged"
+func TestAccStandaloneViewIgnoresUnmanagedChildren(t *testing.T) {
+	viewName := "tf-acc-standalone-unmanaged"
 	var unmanagedID string
 	sweepViewByName(t, viewName)
 	registerViewCleanupByName(t, viewName)
@@ -165,9 +182,9 @@ func TestAccSeparateViewIgnoresUnmanagedChildren(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(separateViewOnlyConfig(viewName, "before")),
+				Config: tfConfig(standaloneViewOnlyConfig(viewName, "before")),
 				Check: func(s *terraform.State) error {
-					viewID := s.RootModule().Resources["crucible_player_view.separate"].Primary.ID
+					viewID := s.RootModule().Resources["crucible_player_view.standalone"].Primary.ID
 					app := &api.PlayerApplication{ViewID: viewID, Name: "unmanaged"}
 					if err := api.CreatePlayerApplication(app, getMap()); err != nil {
 						return err
@@ -178,14 +195,14 @@ func TestAccSeparateViewIgnoresUnmanagedChildren(t *testing.T) {
 				ExpectNonEmptyPlan: false,
 			},
 			{
-				Config: tfConfig(separateViewOnlyConfig(viewName, "after")),
+				Config: tfConfig(standaloneViewOnlyConfig(viewName, "after")),
 				Check: func(*terraform.State) error {
 					_, exists, err := api.ReadPlayerApplication(unmanagedID, getMap())
 					if err != nil {
 						return err
 					}
 					if !exists {
-						return fmt.Errorf("separate view deleted unmanaged application %s", unmanagedID)
+						return fmt.Errorf("standalone view deleted unmanaged application %s", unmanagedID)
 					}
 					return nil
 				},
@@ -194,30 +211,30 @@ func TestAccSeparateViewIgnoresUnmanagedChildren(t *testing.T) {
 	})
 }
 
-func separateViewOnlyConfig(name, description string) string {
+func standaloneViewOnlyConfig(name, description string) string {
 	return fmt.Sprintf(`
-resource "crucible_player_view" "separate" {
+resource "crucible_player_view" "standalone" {
   name              = %q
   description       = %q
   create_admin_team = false
-  child_management  = "separate"
+  child_management  = "standalone"
 }
 `, name, description)
 }
 
-func TestAccSeparateApplicationsForEachPlan(t *testing.T) {
+func TestAccStandaloneApplicationsForEachPlan(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{{
 			Config: tfConfig(`
-resource "crucible_player_view" "separate" {
-  name              = "tf-acc-separate-foreach-plan"
+resource "crucible_player_view" "standalone" {
+  name              = "tf-acc-standalone-foreach-plan"
   create_admin_team = false
-  child_management  = "separate"
+  child_management  = "standalone"
 }
 resource "crucible_player_application" "apps" {
   for_each = toset(["one", "two"])
-  view_id  = crucible_player_view.separate.id
+  view_id  = crucible_player_view.standalone.id
   name     = each.key
 }
 `),
@@ -227,7 +244,7 @@ resource "crucible_player_application" "apps" {
 	})
 }
 
-func TestAccInlineToSeparateMigration(t *testing.T) {
+func TestAccInlineToStandaloneMigration(t *testing.T) {
 	viewName := "tf-acc-child-migration"
 	sweepViewByName(t, viewName)
 	registerViewCleanupByName(t, viewName)
@@ -245,9 +262,9 @@ func TestAccInlineToSeparateMigration(t *testing.T) {
 				Check:  testAccMigrationStandaloneMatchesRemote,
 			},
 			{
-				Config: tfConfig(migrationSeparateConfig(viewName)),
+				Config: tfConfig(migrationStandaloneConfig(viewName)),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("crucible_player_view.migration", "child_management", "separate"),
+					resource.TestCheckResourceAttr("crucible_player_view.migration", "child_management", "standalone"),
 					resource.TestCheckResourceAttr("crucible_player_view.migration", "application.#", "0"),
 					resource.TestCheckResourceAttr("crucible_player_view.migration", "team.#", "0"),
 					testAccMigrationStandaloneMatchesRemote,
@@ -318,12 +335,12 @@ import {
 `
 }
 
-func migrationSeparateConfig(name string) string {
+func migrationStandaloneConfig(name string) string {
 	return fmt.Sprintf(`
 resource "crucible_player_view" "migration" {
   name              = %q
   create_admin_team = false
-  child_management  = "separate"
+  child_management  = "standalone"
 }
 resource "crucible_player_application" "imported" {
   view_id = crucible_player_view.migration.id

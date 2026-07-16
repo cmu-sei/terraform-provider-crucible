@@ -54,9 +54,9 @@ resource "crucible_player_view" "example" {
 - `description` - (Optional) A description for this view.
 - `status` - (Optional) The status of this view. Defaults to `"Active"`.
 - `create_admin_team` - (Optional) Whether to automatically create an Admin team. Defaults to `true`.
-- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"separate"` ignores remote children so they can be managed with standalone resources. Separate mode requires `create_admin_team = false` and rejects `application` and `team` blocks.
+- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"standalone"` ignores remote children so they can be managed with standalone resources. Standalone mode requires `create_admin_team = false` and rejects `application` and `team` blocks.
 
-An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "separate"` when unmanaged or standalone children must be ignored.
+An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "standalone"` when unmanaged or standalone children must be ignored.
 
 ### Applications
 
@@ -104,20 +104,20 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 resource "crucible_player_view" "example" {
   name              = "example"
   create_admin_team = false
-  child_management  = "separate"
+  child_management  = "standalone"
 }
 ```
 
-The provider cannot determine whether a standalone resource using a hardcoded `view_id` targets an inline-managed view. Ensure all standalone children target a view configured with `child_management = "separate"`.
+The provider cannot determine whether a standalone resource using a hardcoded `view_id` targets an inline-managed view. Ensure all standalone children target a view configured with `child_management = "standalone"`.
 
-Deleting a view cascades to its applications, teams, memberships, and application instances in the Player API even in separate mode. Use Terraform references so child resources are destroyed before their view.
+Deleting a view cascades to its applications, teams, memberships, and application instances in the Player API even in standalone mode. Use Terraform references so child resources are destroyed before their view.
 
 ## Migrating Inline Children
 
 Migration requires two applies:
 
 1. Keep all nested blocks. Define matching standalone resources and import each existing application, team, membership, and application instance. Confirm the plan contains imports only.
-2. Remove the nested blocks, set `child_management = "separate"`, and set `create_admin_team = false`. Confirm the plan only detaches nested state and does not replace or delete children.
+2. Remove the nested blocks, set `child_management = "standalone"`, and set `create_admin_team = false`. Confirm the plan only detaches nested state and does not replace or delete children.
 
 Import applications, teams, and memberships by UUID. Import application instances as `<team_uuid>/<instance_uuid>`.
 

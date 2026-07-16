@@ -44,7 +44,7 @@ func (r *playerApplicationResource) Metadata(_ context.Context, req resource.Met
 
 func (r *playerApplicationResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages one application in a separately managed Player view.",
+		Description: "Manages one application in a Player view configured for standalone child management.",
 		Attributes: map[string]schema.Attribute{
 			"id":      computedIDAttribute(),
 			"view_id": requiredUUIDAttribute("UUID of the owning Player view."),

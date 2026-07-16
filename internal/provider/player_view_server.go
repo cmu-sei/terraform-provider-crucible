@@ -56,7 +56,7 @@ type viewModel struct {
 type viewChildManagementValidator struct{}
 
 func (viewChildManagementValidator) Description(context.Context) string {
-	return "separate child management cannot be combined with inline children or automatic Admin-team creation"
+	return "standalone child management cannot be combined with inline children or automatic Admin-team creation"
 }
 
 func (v viewChildManagementValidator) MarkdownDescription(ctx context.Context) string {
@@ -66,17 +66,17 @@ func (v viewChildManagementValidator) MarkdownDescription(ctx context.Context) s
 func (viewChildManagementValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var config viewModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
-	if resp.Diagnostics.HasError() || config.ChildManagement.IsNull() || config.ChildManagement.IsUnknown() || config.ChildManagement.ValueString() != "separate" {
+	if resp.Diagnostics.HasError() || config.ChildManagement.IsNull() || config.ChildManagement.IsUnknown() || config.ChildManagement.ValueString() != "standalone" {
 		return
 	}
 	if !config.Application.IsNull() && !config.Application.IsUnknown() && len(config.Application.Elements()) > 0 {
-		resp.Diagnostics.AddAttributeError(path.Root("application"), "Invalid child ownership configuration", "application blocks cannot be configured when child_management is \"separate\".")
+		resp.Diagnostics.AddAttributeError(path.Root("application"), "Invalid child ownership configuration", "application blocks cannot be configured when child_management is \"standalone\".")
 	}
 	if !config.Team.IsNull() && !config.Team.IsUnknown() && len(config.Team.Elements()) > 0 {
-		resp.Diagnostics.AddAttributeError(path.Root("team"), "Invalid child ownership configuration", "team blocks cannot be configured when child_management is \"separate\".")
+		resp.Diagnostics.AddAttributeError(path.Root("team"), "Invalid child ownership configuration", "team blocks cannot be configured when child_management is \"standalone\".")
 	}
 	if config.CreateAdminTeam.IsNull() || (!config.CreateAdminTeam.IsUnknown() && config.CreateAdminTeam.ValueBool()) {
-		resp.Diagnostics.AddAttributeError(path.Root("create_admin_team"), "Invalid child ownership configuration", "create_admin_team must be explicitly set to false when child_management is \"separate\".")
+		resp.Diagnostics.AddAttributeError(path.Root("create_admin_team"), "Invalid child ownership configuration", "create_admin_team must be explicitly set to false when child_management is \"standalone\".")
 	}
 }
 
@@ -188,9 +188,9 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional:    true,
 				Computed:    true,
 				Default:     stringdefault.StaticString("inline"),
-				Description: "Selects whether child applications and teams are managed by nested blocks (inline) or standalone resources (separate).",
+				Description: "Selects whether child applications and teams are managed by nested blocks (inline) or standalone resources (standalone).",
 				Validators: []validator.String{
-					stringvalidator.OneOf("inline", "separate"),
+					stringvalidator.OneOf("inline", "standalone"),
 				},
 			},
 		},
@@ -317,7 +317,7 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	plan.ID = types.StringValue(id)
-	if plan.ChildManagement.ValueString() == "separate" {
+	if plan.ChildManagement.ValueString() == "standalone" {
 		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		return
@@ -376,7 +376,7 @@ func (r *viewResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	if state.ChildManagement.ValueString() == "separate" {
+	if state.ChildManagement.ValueString() == "standalone" {
 		resp.Diagnostics.Append(r.readTopLevel(&state)...)
 	} else {
 		resp.Diagnostics.Append(r.read(ctx, &state)...)
@@ -413,7 +413,7 @@ func (r *viewResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		resp.Diagnostics.AddError("Error updating view", err.Error())
 		return
 	}
-	if plan.ChildManagement.ValueString() == "separate" {
+	if plan.ChildManagement.ValueString() == "standalone" {
 		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		return
