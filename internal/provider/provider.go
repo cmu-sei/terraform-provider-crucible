@@ -170,6 +170,10 @@ func (p *crucibleProvider) Resources(_ context.Context) []func() resource.Resour
 		NewApplicationTemplateResource,
 		NewVirtualMachineResource,
 		NewViewResource,
+		NewPlayerApplicationResource,
+		NewPlayerTeamResource,
+		NewPlayerTeamUserResource,
+		NewPlayerApplicationInstanceResource,
 	}
 }
 

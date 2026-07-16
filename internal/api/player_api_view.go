@@ -56,6 +56,27 @@ func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
 
 // ReadView reads a view's fields plus its applications and teams.
 func ReadView(id string, m map[string]string) (*structs.ViewInfo, error) {
+	view, err := ReadViewTopLevel(id, m)
+	if err != nil {
+		return nil, err
+	}
+
+	apps, err := readApps(id, m)
+	if err != nil {
+		return nil, err
+	}
+	teams, err := readTeams(id, m)
+	if err != nil {
+		return nil, err
+	}
+
+	view.Applications = *apps
+	view.Teams = *teams
+	return view, nil
+}
+
+// ReadViewTopLevel reads only fields owned by the view itself.
+func ReadViewTopLevel(id string, m map[string]string) (*structs.ViewInfo, error) {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
@@ -84,18 +105,6 @@ func ReadView(id string, m map[string]string) (*structs.ViewInfo, error) {
 	if resp.JSON200.Status != nil {
 		view.Status = string(*resp.JSON200.Status)
 	}
-
-	apps, err := readApps(id, m)
-	if err != nil {
-		return nil, err
-	}
-	teams, err := readTeams(id, m)
-	if err != nil {
-		return nil, err
-	}
-
-	view.Applications = *apps
-	view.Teams = *teams
 	return view, nil
 }
 

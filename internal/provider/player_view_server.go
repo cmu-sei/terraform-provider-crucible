@@ -15,6 +15,7 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -25,13 +26,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ resource.Resource                = &viewResource{}
-	_ resource.ResourceWithConfigure   = &viewResource{}
-	_ resource.ResourceWithImportState = &viewResource{}
+	_ resource.Resource                     = &viewResource{}
+	_ resource.ResourceWithConfigure        = &viewResource{}
+	_ resource.ResourceWithConfigValidators = &viewResource{}
+	_ resource.ResourceWithImportState      = &viewResource{}
 )
 
 // viewResource is the resource implementation for crucible_player_view.
@@ -45,8 +48,36 @@ type viewModel struct {
 	Description     types.String `tfsdk:"description"`
 	Status          types.String `tfsdk:"status"`
 	CreateAdminTeam types.Bool   `tfsdk:"create_admin_team"`
+	ChildManagement types.String `tfsdk:"child_management"`
 	Application     types.List   `tfsdk:"application"`
 	Team            types.List   `tfsdk:"team"`
+}
+
+type viewChildManagementValidator struct{}
+
+func (viewChildManagementValidator) Description(context.Context) string {
+	return "separate child management cannot be combined with inline children or automatic Admin-team creation"
+}
+
+func (v viewChildManagementValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (viewChildManagementValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var config viewModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() || config.ChildManagement.IsNull() || config.ChildManagement.IsUnknown() || config.ChildManagement.ValueString() != "separate" {
+		return
+	}
+	if !config.Application.IsNull() && !config.Application.IsUnknown() && len(config.Application.Elements()) > 0 {
+		resp.Diagnostics.AddAttributeError(path.Root("application"), "Invalid child ownership configuration", "application blocks cannot be configured when child_management is \"separate\".")
+	}
+	if !config.Team.IsNull() && !config.Team.IsUnknown() && len(config.Team.Elements()) > 0 {
+		resp.Diagnostics.AddAttributeError(path.Root("team"), "Invalid child ownership configuration", "team blocks cannot be configured when child_management is \"separate\".")
+	}
+	if config.CreateAdminTeam.IsNull() || (!config.CreateAdminTeam.IsUnknown() && config.CreateAdminTeam.ValueBool()) {
+		resp.Diagnostics.AddAttributeError(path.Root("create_admin_team"), "Invalid child ownership configuration", "create_admin_team must be explicitly set to false when child_management is \"separate\".")
+	}
 }
 
 // Object attribute types for the nested blocks. These mirror the SDKv1 schema
@@ -107,6 +138,10 @@ func (r *viewResource) Configure(_ context.Context, req resource.ConfigureReques
 	r.cfg = cfg
 }
 
+func (r *viewResource) ConfigValidators(context.Context) []resource.ConfigValidator {
+	return []resource.ConfigValidator{viewChildManagementValidator{}}
+}
+
 func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	// computedString builds a computed, optional string attribute whose value is
 	// carried forward from prior state when the configuration omits it. This is
@@ -148,6 +183,15 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional: true,
 				Computed: true,
 				Default:  boolStaticTrue(),
+			},
+			"child_management": schema.StringAttribute{
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString("inline"),
+				Description: "Selects whether child applications and teams are managed by nested blocks (inline) or standalone resources (separate).",
+				Validators: []validator.String{
+					stringvalidator.OneOf("inline", "separate"),
+				},
 			},
 		},
 		Blocks: map[string]schema.Block{
@@ -273,6 +317,11 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	plan.ID = types.StringValue(id)
+	if plan.ChildManagement.ValueString() == "separate" {
+		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		return
+	}
 
 	apps, diags := expandApps(ctx, plan.Application)
 	resp.Diagnostics.Append(diags...)
@@ -313,6 +362,9 @@ func (r *viewResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	if state.ChildManagement.IsNull() || state.ChildManagement.IsUnknown() {
+		state.ChildManagement = types.StringValue("inline")
+	}
 
 	exists, err := api.ViewExists(state.ID.ValueString(), r.cfg)
 	if err != nil {
@@ -324,7 +376,11 @@ func (r *viewResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	resp.Diagnostics.Append(r.read(ctx, &state)...)
+	if state.ChildManagement.ValueString() == "separate" {
+		resp.Diagnostics.Append(r.readTopLevel(&state)...)
+	} else {
+		resp.Diagnostics.Append(r.read(ctx, &state)...)
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -355,6 +411,11 @@ func (r *viewResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 	if err := api.UpdateView(view, r.cfg, id); err != nil {
 		resp.Diagnostics.AddError("Error updating view", err.Error())
+		return
+	}
+	if plan.ChildManagement.ValueString() == "separate" {
+		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		return
 	}
 
@@ -433,7 +494,9 @@ func (r *viewResource) read(ctx context.Context, m *viewModel) diag.Diagnostics 
 	}
 
 	m.Name = types.StringValue(view.Name)
-	m.Description = types.StringValue(view.Description)
+	if view.Description != "" || !m.Description.IsNull() {
+		m.Description = types.StringValue(view.Description)
+	}
 	m.Status = types.StringValue(view.Status)
 
 	// Order applications and teams to match the order already present in the
@@ -500,6 +563,21 @@ func (r *viewResource) read(ctx context.Context, m *viewModel) diag.Diagnostics 
 	diags.Append(d...)
 	m.Team = teamList
 
+	return diags
+}
+
+func (r *viewResource) readTopLevel(m *viewModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	view, err := api.ReadViewTopLevel(m.ID.ValueString(), r.cfg)
+	if err != nil {
+		diags.AddError("Error reading view", err.Error())
+		return diags
+	}
+	m.Name = types.StringValue(view.Name)
+	if view.Description != "" || !m.Description.IsNull() {
+		m.Description = types.StringValue(view.Description)
+	}
+	m.Status = types.StringValue(view.Status)
 	return diags
 }
 

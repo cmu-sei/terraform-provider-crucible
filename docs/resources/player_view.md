@@ -8,6 +8,8 @@ description: |-
 
 Manages views in Crucible's Player API, including the teams and applications within them.
 
+> **Warning:** Do not mix nested child blocks and standalone child resources for the same view. Mixed ownership is unsupported and can cause perpetual plan differences, overwritten settings, or deletion of child objects.
+
 ## Example Usage
 
 ```hcl
@@ -52,6 +54,9 @@ resource "crucible_player_view" "example" {
 - `description` - (Optional) A description for this view.
 - `status` - (Optional) The status of this view. Defaults to `"Active"`.
 - `create_admin_team` - (Optional) Whether to automatically create an Admin team. Defaults to `true`.
+- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"separate"` ignores remote children so they can be managed with standalone resources. Separate mode requires `create_admin_team = false` and rejects `application` and `team` blocks.
+
+An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "separate"` when unmanaged or standalone children must be ignored.
 
 ### Applications
 
@@ -92,3 +97,34 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 ## Attribute Reference
 
 - `id` - The UUID of the view.
+
+## Standalone Child Management
+
+```hcl
+resource "crucible_player_view" "example" {
+  name              = "example"
+  create_admin_team = false
+  child_management  = "separate"
+}
+```
+
+The provider cannot determine whether a standalone resource using a hardcoded `view_id` targets an inline-managed view. Ensure all standalone children target a view configured with `child_management = "separate"`.
+
+Deleting a view cascades to its applications, teams, memberships, and application instances in the Player API even in separate mode. Use Terraform references so child resources are destroyed before their view.
+
+## Migrating Inline Children
+
+Migration requires two applies:
+
+1. Keep all nested blocks. Define matching standalone resources and import each existing application, team, membership, and application instance. Confirm the plan contains imports only.
+2. Remove the nested blocks, set `child_management = "separate"`, and set `create_admin_team = false`. Confirm the plan only detaches nested state and does not replace or delete children.
+
+Import applications, teams, and memberships by UUID. Import application instances as `<team_uuid>/<instance_uuid>`.
+
+`create_admin_team` is only honored when the view is created. Changing it to `false` does not delete an existing Admin team. Before migration, explicitly choose one of:
+
+- Import the Admin team and its membership as standalone resources.
+- Delete the Admin team manually before migration.
+- Leave the Admin team unmanaged.
+
+Never combine the import and ownership-transition steps in one apply.
