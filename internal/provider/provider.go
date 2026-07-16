@@ -181,5 +181,7 @@ func (p *crucibleProvider) Resources(_ context.Context) []func() resource.Resour
 func (p *crucibleProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewApplicationTemplateDataSource,
+		NewPlayerRoleDataSource,
+		NewPlayerTeamRoleDataSource,
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -33,6 +34,7 @@ type playerTeamModel struct {
 	ViewID        types.String `tfsdk:"view_id"`
 	Name          types.String `tfsdk:"name"`
 	Role          types.String `tfsdk:"role"`
+	Default       types.Bool   `tfsdk:"default"`
 	Permissions   types.Set    `tfsdk:"permissions"`
 	ScopedTeamIDs types.Set    `tfsdk:"scoped_team_ids"`
 }
@@ -74,6 +76,12 @@ func (r *playerTeamResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					stringvalidator.LengthAtLeast(1),
 				},
 			},
+			"default": schema.BoolAttribute{
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(false),
+				Description: "Whether this is the view's default team.",
+			},
 			"permissions":     uuidSet("Authoritative unordered set of team-permission UUIDs."),
 			"scoped_team_ids": uuidSet("Authoritative unordered set of target team UUIDs for permission scopes."),
 		},
@@ -84,7 +92,7 @@ func teamFromModel(ctx context.Context, model *playerTeamModel) (*api.PlayerTeam
 	permissions, diags := setStrings(ctx, model.Permissions)
 	scopes, scopeDiags := setStrings(ctx, model.ScopedTeamIDs)
 	diags.Append(scopeDiags...)
-	return &api.PlayerTeam{ID: model.ID.ValueString(), ViewID: model.ViewID.ValueString(), Name: model.Name.ValueString(), Role: model.Role.ValueString(), Permissions: permissions, ScopedTeamIDs: scopes}, diags
+	return &api.PlayerTeam{ID: model.ID.ValueString(), ViewID: model.ViewID.ValueString(), Name: model.Name.ValueString(), Role: model.Role.ValueString(), Default: model.Default.ValueBool(), Permissions: permissions, ScopedTeamIDs: scopes}, diags
 }
 
 func (r *playerTeamResource) read(model *playerTeamModel) (bool, diag.Diagnostics) {
@@ -101,6 +109,7 @@ func (r *playerTeamResource) read(model *playerTeamModel) (bool, diag.Diagnostic
 	model.ViewID = types.StringValue(value.ViewID)
 	model.Name = types.StringValue(value.Name)
 	model.Role = types.StringValue(value.Role)
+	model.Default = types.BoolValue(value.Default)
 	model.Permissions = stringsSet(value.Permissions)
 	model.ScopedTeamIDs = stringsSet(value.ScopedTeamIDs)
 	return true, diags

@@ -18,6 +18,7 @@ resource "crucible_player_view" "example" {
   description       = "This was created from Terraform!"
   status            = "Active"
   create_admin_team = true
+  is_template       = true
 
   application {
     name               = "testApp"
@@ -28,6 +29,7 @@ resource "crucible_player_view" "example" {
   team {
     name = "test_team"
     role = "SomeRole"
+    default = true
     scoped_teams = ["observer_team"]
 
     user {
@@ -54,6 +56,7 @@ resource "crucible_player_view" "example" {
 - `description` - (Optional) A description for this view.
 - `status` - (Optional) The status of this view. Defaults to `"Active"`.
 - `create_admin_team` - (Optional) Whether to automatically create an Admin team. Defaults to `true`.
+- `is_template` - (Optional) Whether the view is a reusable Player template. Defaults to `false`.
 - `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"standalone"` ignores remote children so they can be managed with standalone resources. Standalone mode requires `create_admin_team = false` and rejects `application` and `team` blocks.
 
 An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "standalone"` when unmanaged or standalone children must be ignored.
@@ -80,6 +83,7 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 - `name` - (Required) The name of this team.
 - `team_id` - (Computed) The UUID of this team, assigned by the API.
 - `role` - (Optional) The name of the role this team falls under. Defaults to `"View Member"`.
+- `default` - (Optional) Whether this is the view's default team. Defaults to `false`. At most one inline team can be the default.
 - `permissions` - (Optional) A list of permission IDs for this team.
 - `scoped_teams` - (Optional) An unordered set of sibling team names onto which this team's permissions are scoped. Targets must be other `team` blocks in this view; a team cannot target itself. Defaults to `[]`. Terraform manages the complete set and removes API scope relationships not listed here.
 

@@ -102,6 +102,10 @@ func ReadViewTopLevel(id string, m map[string]string) (*structs.ViewInfo, error)
 		Name:        derefStr(resp.JSON200.Name),
 		Description: derefStr(resp.JSON200.Description),
 	}
+	if resp.JSON200.DefaultTeamId != nil {
+		view.DefaultTeamID = resp.JSON200.DefaultTeamId.String()
+	}
+	view.IsTemplate = derefBool(resp.JSON200.IsTemplate, false)
 	if resp.JSON200.Status != nil {
 		view.Status = string(*resp.JSON200.Status)
 	}
@@ -110,6 +114,37 @@ func ReadViewTopLevel(id string, m map[string]string) (*structs.ViewInfo, error)
 
 // UpdateView updates a view's top-level fields.
 func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
+	current, err := ReadViewTopLevel(id, m)
+	if err != nil {
+		return err
+	}
+	view.DefaultTeamID = current.DefaultTeamID
+	return updateView(view, m, id)
+}
+
+// ReconcileDefaultTeam assigns teamID as the view's default when desired is
+// true. When desired is false, it only clears the setting if teamID currently
+// owns it, so updating a non-default team cannot unset another team.
+func ReconcileDefaultTeam(viewID, teamID string, desired bool, m map[string]string) error {
+	view, err := ReadViewTopLevel(viewID, m)
+	if err != nil {
+		return err
+	}
+	if desired {
+		if view.DefaultTeamID == teamID {
+			return nil
+		}
+		view.DefaultTeamID = teamID
+	} else {
+		if view.DefaultTeamID != teamID {
+			return nil
+		}
+		view.DefaultTeamID = ""
+	}
+	return updateView(view, m, viewID)
+}
+
+func updateView(view *structs.ViewInfo, m map[string]string, id string) error {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
@@ -123,6 +158,14 @@ func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
 	body := playerclient.EditViewCommand{
 		Name:        strPtr(view.Name),
 		Description: strPtr(view.Description),
+		IsTemplate:  boolPtr(view.IsTemplate),
+	}
+	if view.DefaultTeamID != "" {
+		defaultTeamID, err := uuid.Parse(view.DefaultTeamID)
+		if err != nil {
+			return err
+		}
+		body.DefaultTeamId = &defaultTeamID
 	}
 	if view.Status != "" {
 		st := playerclient.ViewStatus(view.Status)

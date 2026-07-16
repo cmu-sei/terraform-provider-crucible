@@ -24,6 +24,8 @@ The Crucible provider enables [Terraform](https://www.terraform.io/) to manage r
 ## Data Sources
 
 - [`crucible_player_application_template`](data-sources/player_application_template.md) — Look up an application template by name in the Player API
+- [`crucible_player_role`](data-sources/player_role.md) — Look up a system role by name in the Player API
+- [`crucible_player_team_role`](data-sources/player_team_role.md) — Look up a team role by name in the Player API
 
 ## Authentication
 

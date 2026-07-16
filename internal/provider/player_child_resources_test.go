@@ -132,6 +132,73 @@ func TestAccStandalonePlayerChildren(t *testing.T) {
 	})
 }
 
+func TestAccStandaloneDefaultTeam(t *testing.T) {
+	const viewName = "tf-acc-standalone-default-team"
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig(standaloneDefaultTeamConfig(viewName, true)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_team.default_team", "default", "true"),
+					testAccVerifyStandaloneDefaultTeam(true),
+				),
+			},
+			{
+				ResourceName:      "crucible_player_team.default_team",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config: tfConfig(standaloneDefaultTeamConfig(viewName, false)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_team.default_team", "default", "false"),
+					testAccVerifyStandaloneDefaultTeam(false),
+				),
+			},
+		},
+	})
+}
+
+func standaloneDefaultTeamConfig(viewName string, defaultTeam bool) string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "standalone_default" {
+  name              = %[1]q
+  create_admin_team = false
+  child_management  = "standalone"
+}
+
+resource "crucible_player_team" "default_team" {
+  view_id = crucible_player_view.standalone_default.id
+  name    = "default-team"
+  default = %[2]t
+}
+`, viewName, defaultTeam)
+}
+
+func testAccVerifyStandaloneDefaultTeam(expected bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		view := s.RootModule().Resources["crucible_player_view.standalone_default"]
+		team := s.RootModule().Resources["crucible_player_team.default_team"]
+		remote, err := api.ReadViewTopLevel(view.Primary.ID, getMap())
+		if err != nil {
+			return err
+		}
+		expectedID := ""
+		if expected {
+			expectedID = team.Primary.ID
+		}
+		if remote.DefaultTeamID != expectedID {
+			return fmt.Errorf("default team id = %q, want %q", remote.DefaultTeamID, expectedID)
+		}
+		return nil
+	}
+}
+
 func standaloneChildrenConfig(viewName, userID string, updated bool) string {
 	appName, teamName, role, order := "terminal", "students", "", 0
 	if updated {

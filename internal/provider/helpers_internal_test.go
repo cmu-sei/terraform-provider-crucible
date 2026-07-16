@@ -141,6 +141,8 @@ func newNullValue(at attr.Type) attr.Value {
 		return types.SetNull(t.ElemType)
 	case basetypes.Float64Type:
 		return types.Float64Null()
+	case basetypes.BoolType:
+		return types.BoolNull()
 	default:
 		return types.StringNull()
 	}
@@ -302,6 +304,7 @@ func TestTeamChildRanks(t *testing.T) {
 		"team_id":      types.StringValue(""),
 		"name":         types.StringValue("t1"),
 		"role":         types.StringValue(""),
+		"default":      types.BoolValue(false),
 		"permissions":  stringList(t, "perm-a", "perm-b"),
 		"scoped_teams": types.SetNull(types.StringType),
 		"app_instance": instList(t, "inst-a"),
@@ -337,6 +340,7 @@ func TestDesiredTeamScopes(t *testing.T) {
 			"team_id":      types.StringNull(),
 			"name":         types.StringValue(name),
 			"role":         types.StringNull(),
+			"default":      types.BoolValue(false),
 			"permissions":  types.ListNull(types.StringType),
 			"scoped_teams": scopes,
 			"app_instance": types.ListNull(types.ObjectType{AttrTypes: viewAppInstanceAttrTypes}),

@@ -30,6 +30,7 @@ type PlayerTeam struct {
 	ViewID        string
 	Name          string
 	Role          string
+	Default       bool
 	Permissions   []string
 	ScopedTeamIDs []string
 }
@@ -189,7 +190,10 @@ func CreatePlayerTeam(team *PlayerTeam, m map[string]string) error {
 		return fmt.Errorf("player API returned status %d without a created team id", resp.StatusCode())
 	}
 	team.ID = resp.JSON201.Id.String()
-	return ReconcilePlayerTeamRelationships(team.ID, team.Permissions, team.ScopedTeamIDs, m)
+	if err := ReconcilePlayerTeamRelationships(team.ID, team.Permissions, team.ScopedTeamIDs, m); err != nil {
+		return err
+	}
+	return ReconcileDefaultTeam(team.ViewID, team.ID, team.Default, m)
 }
 
 func ReadPlayerTeam(id string, m map[string]string) (*PlayerTeam, bool, error) {
@@ -233,6 +237,11 @@ func ReadPlayerTeam(id string, m map[string]string) (*PlayerTeam, bool, error) {
 	}
 	sort.Strings(out.Permissions)
 	sort.Strings(out.ScopedTeamIDs)
+	view, err := ReadViewTopLevel(out.ViewID, m)
+	if err != nil {
+		return nil, false, err
+	}
+	out.Default = view.DefaultTeamID == out.ID
 	return out, true, nil
 }
 
@@ -260,7 +269,10 @@ func UpdatePlayerTeam(team *PlayerTeam, m map[string]string) error {
 	if resp.StatusCode() != http.StatusOK {
 		return fmt.Errorf("player API returned status %d when updating team %s", resp.StatusCode(), team.ID)
 	}
-	return ReconcilePlayerTeamRelationships(team.ID, team.Permissions, team.ScopedTeamIDs, m)
+	if err := ReconcilePlayerTeamRelationships(team.ID, team.Permissions, team.ScopedTeamIDs, m); err != nil {
+		return err
+	}
+	return ReconcileDefaultTeam(team.ViewID, team.ID, team.Default, m)
 }
 
 func ReconcilePlayerTeamRelationships(teamID string, desiredPermissions, desiredScopes []string, m map[string]string) error {

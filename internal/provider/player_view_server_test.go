@@ -77,6 +77,86 @@ func TestAccEmptyView(t *testing.T) {
 	})
 }
 
+func TestAccViewTemplate(t *testing.T) {
+	const (
+		resourceName = "crucible_player_view.template"
+		viewName     = "tf-acc-view-template"
+	)
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig(viewTemplateConfig(viewName, true)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "is_template", "true"),
+					testAccVerifyRemoteViewTemplate(resourceName, true),
+				),
+			},
+			{
+				Config: tfConfig(viewTemplateConfig(viewName, false)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "is_template", "false"),
+					testAccVerifyRemoteViewTemplate(resourceName, false),
+				),
+			},
+			{
+				Config: tfConfig(viewTemplateConfig(viewName, true)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "is_template", "true"),
+					testAccVerifyRemoteViewTemplate(resourceName, true),
+				),
+			},
+			{
+				Config: tfConfig(viewTemplateConfig(viewName, true)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: false,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "is_template", "true"),
+					testAccVerifyRemoteViewTemplate(resourceName, true),
+				),
+			},
+		},
+	})
+}
+
+func viewTemplateConfig(viewName string, isTemplate bool) string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "template" {
+  name              = %[1]q
+  create_admin_team = false
+  child_management  = "standalone"
+  is_template       = %[2]t
+}
+`, viewName, isTemplate)
+}
+
+func testAccVerifyRemoteViewTemplate(resourceName string, expected bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("resource %s not found", resourceName)
+		}
+		view, err := api.ReadViewTopLevel(rs.Primary.ID, getMap())
+		if err != nil {
+			return err
+		}
+		if view.IsTemplate != expected {
+			return fmt.Errorf("remote is_template = %t, want %t", view.IsTemplate, expected)
+		}
+		return nil
+	}
+}
+
 // TestAccIncorrectCreds verifies the provider surfaces an authentication failure
 // when configured with a bad password. The provider does not fetch a token at
 // Configure time — it stashes the credentials and the OAuth2 password grant runs
@@ -175,6 +255,107 @@ func TestAccViewWithTeams(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestAccInlineDefaultTeam(t *testing.T) {
+	const viewName = "tf-acc-inline-default-team"
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig(inlineDefaultTeamConfig(viewName, "first")),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.0.default", "true"),
+					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.1.default", "false"),
+					testAccVerifyDefaultTeam("crucible_player_view.default_team", 0),
+				),
+			},
+			{
+				Config: tfConfig(inlineDefaultTeamConfig(viewName, "second")),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.0.default", "false"),
+					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.1.default", "true"),
+					testAccVerifyDefaultTeam("crucible_player_view.default_team", 1),
+				),
+			},
+			{
+				Config: tfConfig(inlineDefaultTeamConfig(viewName, "")),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.0.default", "false"),
+					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.1.default", "false"),
+					testAccVerifyDefaultTeam("crucible_player_view.default_team", -1),
+				),
+			},
+		},
+	})
+}
+
+func TestAccInlineDefaultTeamValidation(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{{
+			Config: tfConfig(`
+resource "crucible_player_view" "invalid_defaults" {
+  name              = "tf-acc-invalid-default-teams"
+  create_admin_team = false
+  team {
+    name    = "first"
+    default = true
+  }
+  team {
+    name    = "second"
+    default = true
+  }
+}
+`),
+			PlanOnly:    true,
+			ExpectError: regexp.MustCompile(`Only one inline team can have default set to true`),
+		}},
+	})
+}
+
+func inlineDefaultTeamConfig(viewName, selected string) string {
+	firstDefault := selected == "first"
+	secondDefault := selected == "second"
+	return fmt.Sprintf(`
+resource "crucible_player_view" "default_team" {
+  name              = %[1]q
+  create_admin_team = false
+  team {
+    name    = "first"
+    default = %[2]t
+  }
+  team {
+    name    = "second"
+    default = %[3]t
+  }
+}
+`, viewName, firstDefault, secondDefault)
+}
+
+func testAccVerifyDefaultTeam(resourceName string, teamIndex int) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		viewResource, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("resource %s not found", resourceName)
+		}
+		view, err := api.ReadViewTopLevel(viewResource.Primary.ID, getMap())
+		if err != nil {
+			return err
+		}
+		expected := ""
+		if teamIndex >= 0 {
+			expected = viewResource.Primary.Attributes[fmt.Sprintf("team.%d.team_id", teamIndex)]
+		}
+		if view.DefaultTeamID != expected {
+			return fmt.Errorf("default team id = %q, want %q", view.DefaultTeamID, expected)
+		}
+		return nil
+	}
 }
 
 func TestAccViewWithScopedTeams(t *testing.T) {

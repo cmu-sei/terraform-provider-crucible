@@ -121,6 +121,8 @@ type ViewInfo struct {
 	Description     string
 	Status          string
 	CreateAdminTeam bool
+	DefaultTeamID   string
+	IsTemplate      bool
 	Applications    []AppInfo  `json:"-"`
 	Teams           []TeamInfo `json:"-"`
 }
@@ -134,6 +136,7 @@ func (view *ViewInfo) ToMap() map[string]interface{} {
 	ret["description"] = view.Description
 	ret["status"] = view.Status
 	ret["create_admin_team"] = view.CreateAdminTeam
+	ret["is_template"] = view.IsTemplate
 	return ret
 }
 
@@ -213,6 +216,7 @@ type TeamInfo struct {
 	ID           interface{}
 	Name         interface{}
 	Role         interface{}
+	Default      bool
 	Permissions  []string
 	ScopedTeams  []string
 	Users        []UserInfo
@@ -240,6 +244,7 @@ func TeamInfoFromMap(asMap map[string]interface{}) *TeamInfo {
 		ID:           asMap["team_id"],
 		Name:         asMap["name"],
 		Role:         asMap["role"],
+		Default:      util.As[bool](asMap["default"]),
 		Permissions:  *strPermissions,
 		ScopedTeams:  *strScopedTeams,
 		Users:        users,
@@ -272,6 +277,7 @@ func (team *TeamInfo) ToMap() map[string]interface{} {
 	ret["team_id"] = team.ID
 	ret["name"] = team.Name
 	ret["role"] = team.Role
+	ret["default"] = team.Default
 	ret["user"] = *userSlice
 	ret["permissions"] = team.Permissions
 	ret["scoped_teams"] = team.ScopedTeams
