@@ -173,7 +173,15 @@ func ViewNetworkExists(viewID, id string, m map[string]string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return resp.StatusCode() != http.StatusNotFound, nil
+
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, fmt.Errorf("VM API returned status %d when checking view network %s for view %s", resp.StatusCode(), id, viewID)
+	}
 }
 
 // -------------------- structs.ViewNetworkInfo <-> generated model conversion --------------------
