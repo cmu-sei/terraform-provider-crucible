@@ -40,7 +40,8 @@ resource "crucible_player_application" "terminal" {
 terraform import crucible_player_application.terminal <application_uuid>
 ```
 
-Deleting the parent view cascades to this application. The provider cannot validate ownership when `view_id` is hardcoded.
+Deleting the parent view also deletes this application. Reference the view
+resource in `view_id` so Terraform destroys the application before its parent.
 
 ## `for_each`
 
