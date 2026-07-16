@@ -3044,6 +3044,94 @@
         }
       }
     },
+    "/api/teams/{teamId}/scopes/{targetTeamId}": {
+      "post": {
+        "tags": [
+          "TeamPermissionScope"
+        ],
+        "summary": "Adds a Team Permission Scope.",
+        "description": "Scopes the specified Team's permissions onto the specified target Team in the same View.",
+        "operationId": "addTeamPermissionScope",
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "targetTeamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Problem response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "TeamPermissionScope"
+        ],
+        "summary": "Removes a Team Permission Scope.",
+        "description": "Removes the permission scope of the specified Team from the specified target Team.",
+        "operationId": "removeTeamPermissionScope",
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "targetTeamId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Problem response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/team-roles": {
       "post": {
         "tags": [
@@ -5878,6 +5966,14 @@
             },
             "nullable": true
           },
+          "scopedTeamIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nullable": true
+          },
           "isMember": {
             "type": "boolean"
           },
@@ -5976,6 +6072,21 @@
             "type": "array",
             "items": {
               "type": "string"
+            },
+            "nullable": true
+          },
+          "directPermissionValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "sourceTeamIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
             },
             "nullable": true
           }
@@ -6317,6 +6428,9 @@
     },
     {
       "name": "TeamPermission"
+    },
+    {
+      "name": "TeamPermissionScope"
     },
     {
       "name": "TeamRole"

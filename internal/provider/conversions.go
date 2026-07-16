@@ -79,6 +79,18 @@ func toStringSlice(ctx context.Context, list types.List) ([]string, diag.Diagnos
 	return out, diags
 }
 
+// toStringSet converts a framework set of strings into a stable []string.
+func toStringSet(ctx context.Context, set types.Set) ([]string, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	out := []string{}
+	if set.IsNull() || set.IsUnknown() {
+		return out, diags
+	}
+	diags = set.ElementsAs(ctx, &out, false)
+	sort.Strings(out)
+	return out, diags
+}
+
 // orderTeamIDs returns a resource's team ids in a stable order for state: ids
 // that were already present in prior (config/state) order come first in that
 // order, followed by any ids the API reports that weren't there before, sorted

@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -77,6 +78,7 @@ var viewTeamAttrTypes = map[string]attr.Type{
 	"name":         types.StringType,
 	"role":         types.StringType,
 	"permissions":  types.ListType{ElemType: types.StringType},
+	"scoped_teams": types.SetType{ElemType: types.StringType},
 	"app_instance": types.ListType{ElemType: types.ObjectType{AttrTypes: viewAppInstanceAttrTypes}},
 	"user":         types.ListType{ElemType: types.ObjectType{AttrTypes: viewUserAttrTypes}},
 }
@@ -183,6 +185,14 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 							Optional:    true,
 							ElementType: types.StringType,
 						},
+						"scoped_teams": schema.SetAttribute{
+							Optional:    true,
+							Computed:    true,
+							ElementType: types.StringType,
+							Default: setdefault.StaticValue(
+								types.SetValueMust(types.StringType, []attr.Value{}),
+							),
+						},
 					},
 					Blocks: map[string]schema.Block{
 						"app_instance": schema.ListNestedBlock{
@@ -244,6 +254,12 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
+	scopes, diags := desiredTeamScopes(ctx, plan.Team)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	view := &structs.ViewInfo{
 		Name:            plan.Name.ValueString(),
 		Description:     plan.Description.ValueString(),
@@ -277,6 +293,10 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 			resp.Diagnostics.AddError("Error creating view teams", err.Error())
 			return
 		}
+	}
+	if err := api.UpdateTeamScopes(id, scopes, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error creating scoped team relationships", err.Error())
+		return
 	}
 
 	resp.Diagnostics.Append(r.read(ctx, &plan)...)
@@ -320,6 +340,12 @@ func (r *viewResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	scopes, diags := desiredTeamScopes(ctx, plan.Team)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	id := state.ID.ValueString()
 
 	view := &structs.ViewInfo{
@@ -355,6 +381,10 @@ func (r *viewResource) Update(ctx context.Context, req resource.UpdateRequest, r
 			resp.Diagnostics.AddError("Error updating view teams", err.Error())
 			return
 		}
+	}
+	if err := api.UpdateTeamScopes(id, scopes, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error updating scoped team relationships", err.Error())
+		return
 	}
 
 	resp.Diagnostics.Append(r.read(ctx, &plan)...)
@@ -577,6 +607,84 @@ func childRankByAttr(list types.List, attrName string) map[string]int {
 	return rank
 }
 
+// desiredTeamScopes returns the complete outgoing scope set for every planned
+// team. The schema defaults omitted scoped_teams attributes to an empty set.
+func desiredTeamScopes(ctx context.Context, teams types.List) (map[string][]string, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	scopes := make(map[string][]string)
+	if teams.IsNull() || teams.IsUnknown() {
+		return scopes, diags
+	}
+
+	nameCounts := make(map[string]int)
+	type configuredTeam struct {
+		name    string
+		targets types.Set
+	}
+	configured := make([]configuredTeam, 0, len(teams.Elements()))
+
+	for _, elem := range teams.Elements() {
+		team, ok := elem.(types.Object)
+		if !ok {
+			continue
+		}
+		attrs := team.Attributes()
+		name, ok := attrs["name"].(types.String)
+		if !ok || name.IsNull() || name.IsUnknown() {
+			continue
+		}
+		teamName := name.ValueString()
+		nameCounts[teamName]++
+
+		targets, ok := attrs["scoped_teams"].(types.Set)
+		if !ok || targets.IsNull() {
+			targets = types.SetValueMust(types.StringType, []attr.Value{})
+		} else if targets.IsUnknown() {
+			diags.AddError(
+				"Unknown scoped teams",
+				fmt.Sprintf("Team %q has an unknown scoped_teams value during apply.", teamName),
+			)
+			continue
+		}
+		configured = append(configured, configuredTeam{name: teamName, targets: targets})
+	}
+
+	for _, team := range configured {
+		if nameCounts[team.name] != 1 {
+			diags.AddError(
+				"Ambiguous scoped team source",
+				fmt.Sprintf("Team %q cannot manage scoped_teams because its name is not unique within the view.", team.name),
+			)
+			continue
+		}
+
+		targets, d := toStringSet(ctx, team.targets)
+		diags.Append(d...)
+		for _, target := range targets {
+			switch {
+			case target == team.name:
+				diags.AddError(
+					"Invalid scoped team target",
+					fmt.Sprintf("Team %q cannot scope its permissions onto itself.", team.name),
+				)
+			case nameCounts[target] == 0:
+				diags.AddError(
+					"Unknown scoped team target",
+					fmt.Sprintf("Team %q references scoped team %q, but no configured sibling team has that name.", team.name, target),
+				)
+			case nameCounts[target] > 1:
+				diags.AddError(
+					"Ambiguous scoped team target",
+					fmt.Sprintf("Team %q references scoped team %q, but multiple configured sibling teams have that name.", team.name, target),
+				)
+			}
+		}
+		scopes[team.name] = targets
+	}
+
+	return scopes, diags
+}
+
 // nameLess orders two block names by their position in rank (configured order
 // first); names absent from rank sort after ranked names, alphabetically.
 func nameLess(a, b string, rank map[string]int) bool {
@@ -649,6 +757,7 @@ func expandTeams(ctx context.Context, list types.List) ([]interface{}, diag.Diag
 		Name        types.String `tfsdk:"name"`
 		Role        types.String `tfsdk:"role"`
 		Permissions types.List   `tfsdk:"permissions"`
+		ScopedTeams types.Set    `tfsdk:"scoped_teams"`
 		AppInstance types.List   `tfsdk:"app_instance"`
 		User        types.List   `tfsdk:"user"`
 	}
@@ -663,6 +772,12 @@ func expandTeams(ctx context.Context, list types.List) ([]interface{}, diag.Diag
 		permIface := make([]interface{}, len(perms))
 		for i, p := range perms {
 			permIface[i] = p
+		}
+		scopedTeams, d := toStringSet(ctx, t.ScopedTeams)
+		diags.Append(d...)
+		scopedIface := make([]interface{}, len(scopedTeams))
+		for i, scopedTeam := range scopedTeams {
+			scopedIface[i] = scopedTeam
 		}
 
 		users := []interface{}{}
@@ -704,6 +819,7 @@ func expandTeams(ctx context.Context, list types.List) ([]interface{}, diag.Diag
 			"name":         t.Name.ValueString(),
 			"role":         t.Role.ValueString(),
 			"permissions":  permIface,
+			"scoped_teams": scopedIface,
 			"user":         users,
 			"app_instance": instances,
 		})
@@ -735,6 +851,13 @@ func flattenTeamMap(ctx context.Context, m map[string]interface{}) (attr.Value, 
 		perms = p
 	}
 	permList, d := types.ListValueFrom(ctx, types.StringType, perms)
+	diags.Append(d...)
+
+	scopedTeams := []string{}
+	if s, ok := m["scoped_teams"].([]string); ok {
+		scopedTeams = append(scopedTeams, s...)
+	}
+	scopedTeamSet, d := types.SetValueFrom(ctx, types.StringType, scopedTeams)
 	diags.Append(d...)
 
 	// users
@@ -779,6 +902,7 @@ func flattenTeamMap(ctx context.Context, m map[string]interface{}) (attr.Value, 
 		"name":         types.StringValue(ifaceStr(m["name"])),
 		"role":         types.StringValue(ifaceStr(m["role"])),
 		"permissions":  permList,
+		"scoped_teams": scopedTeamSet,
 		"app_instance": instList,
 		"user":         userList,
 	})

@@ -117,10 +117,11 @@ func TestAppInfoFromMap(t *testing.T) {
 func TestTeamInfoFromMap(t *testing.T) {
 	// Exercises userInfoFromMap (unexported) indirectly.
 	got := structs.TeamInfoFromMap(map[string]interface{}{
-		"team_id":     "t1",
-		"name":        "Admins",
-		"role":        "View Member",
-		"permissions": []interface{}{"perm-a", "perm-b"},
+		"team_id":      "t1",
+		"name":         "Admins",
+		"role":         "View Member",
+		"permissions":  []interface{}{"perm-a", "perm-b"},
+		"scoped_teams": []interface{}{"Team B"},
 		"user": []interface{}{
 			map[string]interface{}{"user_id": "u1", "role": "Owner"},
 			map[string]interface{}{"user_id": "u2", "role": nil},
@@ -132,6 +133,9 @@ func TestTeamInfoFromMap(t *testing.T) {
 	}
 	if len(got.Permissions) != 2 || got.Permissions[0] != "perm-a" || got.Permissions[1] != "perm-b" {
 		t.Errorf("permissions = %v, want [perm-a perm-b]", got.Permissions)
+	}
+	if len(got.ScopedTeams) != 1 || got.ScopedTeams[0] != "Team B" {
+		t.Errorf("scoped teams = %v, want [Team B]", got.ScopedTeams)
 	}
 	if len(got.Users) != 2 {
 		t.Fatalf("users len = %d, want 2", len(got.Users))

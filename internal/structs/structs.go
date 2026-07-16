@@ -214,6 +214,7 @@ type TeamInfo struct {
 	Name         interface{}
 	Role         interface{}
 	Permissions  []string
+	ScopedTeams  []string
 	Users        []UserInfo
 	AppInstances []AppInstance
 }
@@ -232,12 +233,15 @@ func TeamInfoFromMap(asMap map[string]interface{}) *TeamInfo {
 
 	permissions := util.As[[]interface{}](asMap["permissions"])
 	strPermissions := util.ToStringSlice(&permissions)
+	scopedTeams := util.As[[]interface{}](asMap["scoped_teams"])
+	strScopedTeams := util.ToStringSlice(&scopedTeams)
 
 	return &TeamInfo{
 		ID:           asMap["team_id"],
 		Name:         asMap["name"],
 		Role:         asMap["role"],
 		Permissions:  *strPermissions,
+		ScopedTeams:  *strScopedTeams,
 		Users:        users,
 		AppInstances: apps,
 	}
@@ -270,6 +274,7 @@ func (team *TeamInfo) ToMap() map[string]interface{} {
 	ret["role"] = team.Role
 	ret["user"] = *userSlice
 	ret["permissions"] = team.Permissions
+	ret["scoped_teams"] = team.ScopedTeams
 	ret["app_instance"] = *instances
 	return ret
 }

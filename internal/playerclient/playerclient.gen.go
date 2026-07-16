@@ -531,14 +531,15 @@ type SendViewNotificationCommand struct {
 
 // Team defines model for Team.
 type Team struct {
-	Id          *openapi_types.UUID    `json:"id,omitempty"`
-	IsMember    *bool                  `json:"isMember,omitempty"`
-	IsPrimary   *bool                  `json:"isPrimary,omitempty"`
-	Name        *string                `json:"name,omitempty"`
-	Permissions *[]TeamPermissionModel `json:"permissions,omitempty"`
-	RoleId      *openapi_types.UUID    `json:"roleId,omitempty"`
-	RoleName    *string                `json:"roleName,omitempty"`
-	ViewId      *openapi_types.UUID    `json:"viewId,omitempty"`
+	Id            *openapi_types.UUID    `json:"id,omitempty"`
+	IsMember      *bool                  `json:"isMember,omitempty"`
+	IsPrimary     *bool                  `json:"isPrimary,omitempty"`
+	Name          *string                `json:"name,omitempty"`
+	Permissions   *[]TeamPermissionModel `json:"permissions,omitempty"`
+	RoleId        *openapi_types.UUID    `json:"roleId,omitempty"`
+	RoleName      *string                `json:"roleName,omitempty"`
+	ScopedTeamIds *[]openapi_types.UUID  `json:"scopedTeamIds,omitempty"`
+	ViewId        *openapi_types.UUID    `json:"viewId,omitempty"`
 }
 
 // TeamMembership defines model for TeamMembership.
@@ -564,10 +565,12 @@ type TeamPermissionModel struct {
 
 // TeamPermissionsClaim defines model for TeamPermissionsClaim.
 type TeamPermissionsClaim struct {
-	IsPrimary        *bool               `json:"isPrimary,omitempty"`
-	PermissionValues *[]string           `json:"permissionValues,omitempty"`
-	TeamId           *openapi_types.UUID `json:"teamId,omitempty"`
-	ViewId           *openapi_types.UUID `json:"viewId,omitempty"`
+	DirectPermissionValues *[]string             `json:"directPermissionValues,omitempty"`
+	IsPrimary              *bool                 `json:"isPrimary,omitempty"`
+	PermissionValues       *[]string             `json:"permissionValues,omitempty"`
+	SourceTeamIds          *[]openapi_types.UUID `json:"sourceTeamIds,omitempty"`
+	TeamId                 *openapi_types.UUID   `json:"teamId,omitempty"`
+	ViewId                 *openapi_types.UUID   `json:"viewId,omitempty"`
 }
 
 // TeamRole defines model for TeamRole.
@@ -1240,6 +1243,12 @@ type ClientInterface interface {
 
 	// AddTeamPermissionToTeam request
 	AddTeamPermissionToTeam(ctx context.Context, teamId openapi_types.UUID, permissionId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveTeamPermissionScope request
+	RemoveTeamPermissionScope(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddTeamPermissionScope request
+	AddTeamPermissionScope(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveUserFromTeam request
 	RemoveUserFromTeam(ctx context.Context, teamId openapi_types.UUID, userId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2351,6 +2360,30 @@ func (c *Client) RemoveTeamPermissionFromTeam(ctx context.Context, teamId openap
 
 func (c *Client) AddTeamPermissionToTeam(ctx context.Context, teamId openapi_types.UUID, permissionId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAddTeamPermissionToTeamRequest(c.Server, teamId, permissionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveTeamPermissionScope(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveTeamPermissionScopeRequest(c.Server, teamId, targetTeamId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddTeamPermissionScope(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddTeamPermissionScopeRequest(c.Server, teamId, targetTeamId)
 	if err != nil {
 		return nil, err
 	}
@@ -5448,6 +5481,88 @@ func NewAddTeamPermissionToTeamRequest(server string, teamId openapi_types.UUID,
 	return req, nil
 }
 
+// NewRemoveTeamPermissionScopeRequest generates requests for RemoveTeamPermissionScope
+func NewRemoveTeamPermissionScopeRequest(server string, teamId openapi_types.UUID, targetTeamId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "targetTeamId", targetTeamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/teams/%s/scopes/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAddTeamPermissionScopeRequest generates requests for AddTeamPermissionScope
+func NewAddTeamPermissionScopeRequest(server string, teamId openapi_types.UUID, targetTeamId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "targetTeamId", targetTeamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/teams/%s/scopes/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRemoveUserFromTeamRequest generates requests for RemoveUserFromTeam
 func NewRemoveUserFromTeamRequest(server string, teamId openapi_types.UUID, userId openapi_types.UUID) (*http.Request, error) {
 	var err error
@@ -7401,6 +7516,12 @@ type ClientWithResponsesInterface interface {
 
 	// AddTeamPermissionToTeamWithResponse request
 	AddTeamPermissionToTeamWithResponse(ctx context.Context, teamId openapi_types.UUID, permissionId openapi_types.UUID, reqEditors ...RequestEditorFn) (*AddTeamPermissionToTeamResponse, error)
+
+	// RemoveTeamPermissionScopeWithResponse request
+	RemoveTeamPermissionScopeWithResponse(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*RemoveTeamPermissionScopeResponse, error)
+
+	// AddTeamPermissionScopeWithResponse request
+	AddTeamPermissionScopeWithResponse(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*AddTeamPermissionScopeResponse, error)
 
 	// RemoveUserFromTeamWithResponse request
 	RemoveUserFromTeamWithResponse(ctx context.Context, teamId openapi_types.UUID, userId openapi_types.UUID, reqEditors ...RequestEditorFn) (*RemoveUserFromTeamResponse, error)
@@ -9548,6 +9669,66 @@ func (r AddTeamPermissionToTeamResponse) ContentType() string {
 	return ""
 }
 
+type RemoveTeamPermissionScopeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *ProblemDetails
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveTeamPermissionScopeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveTeamPermissionScopeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveTeamPermissionScopeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AddTeamPermissionScopeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *ProblemDetails
+}
+
+// Status returns HTTPResponse.Status
+func (r AddTeamPermissionScopeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddTeamPermissionScopeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AddTeamPermissionScopeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RemoveUserFromTeamResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -11520,6 +11701,24 @@ func (c *ClientWithResponses) AddTeamPermissionToTeamWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParseAddTeamPermissionToTeamResponse(rsp)
+}
+
+// RemoveTeamPermissionScopeWithResponse request returning *RemoveTeamPermissionScopeResponse
+func (c *ClientWithResponses) RemoveTeamPermissionScopeWithResponse(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*RemoveTeamPermissionScopeResponse, error) {
+	rsp, err := c.RemoveTeamPermissionScope(ctx, teamId, targetTeamId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveTeamPermissionScopeResponse(rsp)
+}
+
+// AddTeamPermissionScopeWithResponse request returning *AddTeamPermissionScopeResponse
+func (c *ClientWithResponses) AddTeamPermissionScopeWithResponse(ctx context.Context, teamId openapi_types.UUID, targetTeamId openapi_types.UUID, reqEditors ...RequestEditorFn) (*AddTeamPermissionScopeResponse, error) {
+	rsp, err := c.AddTeamPermissionScope(ctx, teamId, targetTeamId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddTeamPermissionScopeResponse(rsp)
 }
 
 // RemoveUserFromTeamWithResponse request returning *RemoveUserFromTeamResponse
@@ -14017,6 +14216,58 @@ func ParseAddTeamPermissionToTeamResponse(rsp *http.Response) (*AddTeamPermissio
 	}
 
 	response := &AddTeamPermissionToTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemDetails
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveTeamPermissionScopeResponse parses an HTTP response from a RemoveTeamPermissionScopeWithResponse call
+func ParseRemoveTeamPermissionScopeResponse(rsp *http.Response) (*RemoveTeamPermissionScopeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveTeamPermissionScopeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemDetails
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAddTeamPermissionScopeResponse parses an HTTP response from a AddTeamPermissionScopeWithResponse call
+func ParseAddTeamPermissionScopeResponse(rsp *http.Response) (*AddTeamPermissionScopeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddTeamPermissionScopeResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
