@@ -61,6 +61,10 @@ resource "crucible_player_view" "example" {
 
 An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "standalone"` when unmanaged or standalone children must be ignored.
 
+For new configurations, prefer standalone child management for independent
+lifecycles, `for_each`, imports, and clearer dependencies. Inline management
+remains supported for existing and compact configurations.
+
 ### Applications
 
 The `application` block is optional and repeatable. Applications should be placed in alphabetical order by name to avoid unnecessary state changes.
