@@ -10,6 +10,10 @@ Manages views in Crucible's Player API, including the teams and applications wit
 
 > **Warning:** Do not mix nested child blocks and standalone child resources for the same view. Mixed ownership is unsupported and can cause perpetual plan differences, overwritten settings, or deletion of child objects.
 
+> **Recommended:** For new configurations, prefer standalone child management
+> for independent lifecycles, `for_each`, imports, and clearer dependencies.
+> Inline management remains supported for existing and compact configurations.
+
 ## Example Usage
 
 ```hcl
@@ -61,10 +65,6 @@ resource "crucible_player_view" "example" {
 
 An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "standalone"` when unmanaged or standalone children must be ignored.
 
-For new configurations, prefer standalone child management for independent
-lifecycles, `for_each`, imports, and clearer dependencies. Inline management
-remains supported for existing and compact configurations.
-
 ### Applications
 
 The `application` block is optional and repeatable. Applications should be placed in alphabetical order by name to avoid unnecessary state changes.
@@ -114,9 +114,33 @@ resource "crucible_player_view" "example" {
   create_admin_team = false
   child_management  = "standalone"
 }
+
+resource "crucible_player_application" "terminal" {
+  view_id = crucible_player_view.example.id
+  name    = "terminal"
+  url     = "https://terminal.example.test"
+}
+
+resource "crucible_player_team" "students" {
+  view_id = crucible_player_view.example.id
+  name    = "students"
+}
+
+resource "crucible_player_view_default_team" "students" {
+  view_id = crucible_player_view.example.id
+  team_id = crucible_player_team.students.id
+}
+
+resource "crucible_player_application_instance" "terminal" {
+  team_id        = crucible_player_team.students.id
+  application_id = crucible_player_application.terminal.id
+  display_order  = 0
+}
 ```
 
-The provider cannot determine whether a standalone resource using a hardcoded `view_id` targets an inline-managed view. Ensure all standalone children target a view configured with `child_management = "standalone"`.
+The provider cannot verify that a standalone child targets a view configured
+for standalone ownership. Ensure all standalone children target a view with
+`child_management = "standalone"`.
 
 Deleting a view cascades to its applications, teams, memberships, and application instances in the Player API even in standalone mode. Use Terraform references so child resources are destroyed before their view.
 
