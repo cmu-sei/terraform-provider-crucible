@@ -307,6 +307,17 @@ func findMembershipID(userID, viewID, teamID string, m map[string]string) (strin
 	return "", fmt.Errorf("no membership found for the given user and view")
 }
 
+func findMembershipIDByTeam(userID, teamID string, m map[string]string) (string, error) {
+	team, exists, err := ReadPlayerTeam(teamID, m)
+	if err != nil {
+		return "", fmt.Errorf("read team %s while looking for membership id: %w", teamID, err)
+	}
+	if !exists {
+		return "", fmt.Errorf("team %s not found while looking for membership id", teamID)
+	}
+	return findMembershipID(userID, team.ViewID, teamID, m)
+}
+
 // getMembership returns the role name for the team-membership with the given id.
 func getMembership(id string, m map[string]string) (string, error) {
 	client, err := playerclient.NewAuthed(m)

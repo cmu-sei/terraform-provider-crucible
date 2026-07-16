@@ -27,7 +27,6 @@ type playerTeamUserResource struct{ playerConfiguredResource }
 
 type playerTeamUserModel struct {
 	ID     types.String `tfsdk:"id"`
-	ViewID types.String `tfsdk:"view_id"`
 	TeamID types.String `tfsdk:"team_id"`
 	UserID types.String `tfsdk:"user_id"`
 	Role   types.String `tfsdk:"role"`
@@ -44,7 +43,6 @@ func (r *playerTeamUserResource) Schema(_ context.Context, _ resource.SchemaRequ
 		Description: "Manages one Player user-to-team membership.",
 		Attributes: map[string]schema.Attribute{
 			"id":      computedIDAttribute(),
-			"view_id": requiredUUIDAttribute("UUID of the membership's Player view."),
 			"team_id": requiredUUIDAttribute("UUID of the membership's team."),
 			"user_id": requiredUUIDAttribute("UUID of the membership's user."),
 			"role": schema.StringAttribute{
@@ -59,7 +57,7 @@ func (r *playerTeamUserResource) Schema(_ context.Context, _ resource.SchemaRequ
 }
 
 func membershipFromModel(model *playerTeamUserModel) *api.PlayerTeamUser {
-	return &api.PlayerTeamUser{ID: model.ID.ValueString(), ViewID: model.ViewID.ValueString(), TeamID: model.TeamID.ValueString(), UserID: model.UserID.ValueString(), Role: optionalString(model.Role)}
+	return &api.PlayerTeamUser{ID: model.ID.ValueString(), TeamID: model.TeamID.ValueString(), UserID: model.UserID.ValueString(), Role: optionalString(model.Role)}
 }
 
 func (r *playerTeamUserResource) read(model *playerTeamUserModel) (bool, diag.Diagnostics) {
@@ -73,7 +71,6 @@ func (r *playerTeamUserResource) read(model *playerTeamUserModel) (bool, diag.Di
 		return false, diags
 	}
 	model.ID = types.StringValue(value.ID)
-	model.ViewID = types.StringValue(value.ViewID)
 	model.TeamID = types.StringValue(value.TeamID)
 	model.UserID = types.StringValue(value.UserID)
 	model.Role = stringValue(value.Role)

@@ -36,7 +36,6 @@ type PlayerTeam struct {
 
 type PlayerTeamUser struct {
 	ID     string
-	ViewID string
 	TeamID string
 	UserID string
 	Role   *string
@@ -213,6 +212,9 @@ func ReadPlayerTeam(id string, m map[string]string) (*PlayerTeam, bool, error) {
 		return nil, false, fmt.Errorf("player API returned status %d when reading team %s", resp.StatusCode(), id)
 	}
 	t := resp.JSON200
+	if t.ViewId == nil {
+		return nil, false, fmt.Errorf("player API returned team %s without a view id", id)
+	}
 	out := &PlayerTeam{ID: id, ViewID: t.ViewId.String(), Name: derefStr(t.Name), Role: derefStr(t.RoleName)}
 	if t.Id != nil {
 		out.ID = t.Id.String()
@@ -340,7 +342,7 @@ func CreatePlayerTeamUser(membership *PlayerTeamUser, m map[string]string) error
 	if err := addUser(membership.UserID, membership.TeamID, m); err != nil {
 		return err
 	}
-	id, err := findMembershipID(membership.UserID, membership.ViewID, membership.TeamID, m)
+	id, err := findMembershipIDByTeam(membership.UserID, membership.TeamID, m)
 	if err != nil {
 		return err
 	}
@@ -371,7 +373,7 @@ func ReadPlayerTeamUser(id string, m map[string]string) (*PlayerTeamUser, bool, 
 		return nil, false, fmt.Errorf("player API returned status %d when reading team membership %s", resp.StatusCode(), id)
 	}
 	value := resp.JSON200
-	out := &PlayerTeamUser{ID: id, ViewID: value.ViewId.String(), TeamID: value.TeamId.String(), UserID: value.UserId.String()}
+	out := &PlayerTeamUser{ID: id, TeamID: value.TeamId.String(), UserID: value.UserId.String()}
 	if value.Id != nil {
 		out.ID = value.Id.String()
 	}

@@ -12,7 +12,6 @@ Manages one user-to-team membership.
 
 ```hcl
 resource "crucible_player_team_user" "student" {
-  view_id = crucible_player_view.example.id
   team_id = crucible_player_team.students.id
   user_id = crucible_player_user.student.id
 }
@@ -22,7 +21,6 @@ Omitting `role` stores a null membership role, causing the user to inherit the t
 
 ## Arguments
 
-- `view_id` - (Required, Forces replacement) View UUID used to discover the membership.
 - `team_id` - (Required, Forces replacement) Team UUID.
 - `user_id` - (Required, Forces replacement) User UUID.
 - `role` - (Optional) Explicit membership role name.

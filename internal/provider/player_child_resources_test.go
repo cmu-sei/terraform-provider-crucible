@@ -83,6 +83,7 @@ func TestAccStandalonePlayerChildren(t *testing.T) {
 					resource.TestCheckResourceAttrSet("crucible_player_application.terminal", "id"),
 					resource.TestCheckResourceAttr("crucible_player_team.students", "permissions.#", "0"),
 					resource.TestCheckResourceAttr("crucible_player_team.students", "scoped_team_ids.#", "0"),
+					resource.TestCheckNoResourceAttr("crucible_player_team_user.student", "view_id"),
 					resource.TestCheckNoResourceAttr("crucible_player_team_user.student", "role"),
 					resource.TestCheckResourceAttr("crucible_player_application_instance.terminal", "display_order", "0"),
 				),
@@ -158,7 +159,6 @@ resource "crucible_player_team" "students" {
 }
 
 resource "crucible_player_team_user" "student" {
-  view_id = crucible_player_view.standalone.id
   team_id = crucible_player_team.students.id
   user_id = %[4]q%[5]s
 }
