@@ -97,7 +97,7 @@ func TestAccViewTemplate(t *testing.T) {
 				),
 			},
 			{
-				Config: tfConfig(viewTemplateConfig(false)),
+				Config: tfConfig(viewTemplateOmittedConfig()),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "is_template", "false"),
 					testAccVerifyRemoteViewTemplate(false),
@@ -127,6 +127,16 @@ func TestAccViewTemplate(t *testing.T) {
 			},
 		},
 	})
+}
+
+func viewTemplateOmittedConfig() string {
+	return `
+resource "crucible_player_view" "template" {
+  name              = "tf-acc-view-template"
+  create_admin_team = false
+  child_management  = "standalone"
+}
+`
 }
 
 func viewTemplateConfig(isTemplate bool) string {
@@ -284,7 +294,7 @@ func TestAccInlineDefaultTeam(t *testing.T) {
 				),
 			},
 			{
-				Config: tfConfig(inlineDefaultTeamConfig(viewName, "")),
+				Config: tfConfig(inlineDefaultTeamOmittedConfig(viewName)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.0.default", "false"),
 					resource.TestCheckResourceAttr("crucible_player_view.default_team", "team.1.default", "false"),
@@ -295,6 +305,184 @@ func TestAccInlineDefaultTeam(t *testing.T) {
 	})
 }
 
+func inlineDefaultTeamOmittedConfig(viewName string) string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "default_team" {
+  name              = %[1]q
+  create_admin_team = false
+  team {
+    name = "first"
+  }
+  team {
+    name = "second"
+  }
+}
+`, viewName)
+}
+
+func TestAccInlineDefaultTeamRemoval(t *testing.T) {
+	const viewName = "tf-acc-inline-default-team-removal"
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig(inlineDefaultTeamRemovalConfig(viewName, true)),
+				Check:  testAccVerifyDefaultTeam("crucible_player_view.default_team_removal", 0),
+			},
+			{
+				Config: tfConfig(inlineDefaultTeamRemovalConfig(viewName, false)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view.default_team_removal", "team.#", "1"),
+					testAccVerifyDefaultTeam("crucible_player_view.default_team_removal", -1),
+				),
+			},
+		},
+	})
+}
+
+func inlineDefaultTeamRemovalConfig(viewName string, includeDefault bool) string {
+	defaultTeam := ""
+	if includeDefault {
+		defaultTeam = `
+  team {
+    name    = "default"
+    default = true
+  }`
+	}
+	return fmt.Sprintf(`
+resource "crucible_player_view" "default_team_removal" {
+  name              = %[1]q
+  create_admin_team = false
+%[2]s
+  team {
+    name = "remaining"
+  }
+}
+`, viewName, defaultTeam)
+}
+
+func TestAccViewOmittedFalseDefaultsShowDrift(t *testing.T) {
+	const (
+		viewName     = "tf-acc-view-omitted-false-defaults"
+		resourceName = "crucible_player_view.omitted"
+	)
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config:             tfConfig(viewOmittedFalseDefaultsConfig(viewName)),
+				Check:              testAccSetRemoteViewFlags(resourceName),
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				Config: tfConfig(viewOmittedFalseDefaultsConfig(viewName)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(resourceName, plancheck.ResourceActionUpdate),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "is_template", "false"),
+					resource.TestCheckResourceAttr(resourceName, "team.0.default", "false"),
+					testAccVerifyRemoteViewFlagsCleared(resourceName),
+				),
+			},
+		},
+	})
+}
+
+func viewOmittedFalseDefaultsConfig(viewName string) string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "omitted" {
+  name              = %[1]q
+  create_admin_team = false
+  team {
+    name = "students"
+  }
+}
+`, viewName)
+}
+
+func testAccSetRemoteViewFlags(resourceName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		state := s.RootModule().Resources[resourceName].Primary
+		view, err := api.ReadViewTopLevel(state.ID, getMap())
+		if err != nil {
+			return err
+		}
+		view.IsTemplate = true
+		if err := api.UpdateView(view, getMap(), state.ID); err != nil {
+			return err
+		}
+		return api.ReconcileDefaultTeam(state.ID, state.Attributes["team.0.team_id"], true, getMap())
+	}
+}
+
+func testAccVerifyRemoteViewFlagsCleared(resourceName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		state := s.RootModule().Resources[resourceName].Primary
+		view, err := api.ReadViewTopLevel(state.ID, getMap())
+		if err != nil {
+			return err
+		}
+		if view.IsTemplate {
+			return fmt.Errorf("remote is_template = true, want false")
+		}
+		if view.DefaultTeamID != "" {
+			return fmt.Errorf("remote default team = %s, want empty", view.DefaultTeamID)
+		}
+		return nil
+	}
+}
+
+func TestAccInlineApplicationInstanceFractionalDisplayOrder(t *testing.T) {
+	const viewName = "tf-acc-inline-fractional-display-order"
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig(inlineFractionalDisplayOrderConfig(viewName)),
+			},
+			{
+				Config: tfConfig(inlineFractionalDisplayOrderConfig(viewName)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
+func inlineFractionalDisplayOrderConfig(viewName string) string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "fractional_order" {
+  name              = %[1]q
+  create_admin_team = false
+  application {
+    name = "terminal"
+  }
+  team {
+    name = "students"
+    app_instance {
+      name          = "terminal"
+      display_order = 0.1
+    }
+  }
+}
+`, viewName)
+}
 func TestAccInlineDefaultTeamValidation(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

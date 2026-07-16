@@ -30,19 +30,7 @@ func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
 		return "", err
 	}
 
-	body := playerclient.CreateViewCommand{
-		Name:            strPtr(view.Name),
-		CreateAdminTeam: boolPtr(view.CreateAdminTeam),
-	}
-	if view.Description != "" {
-		body.Description = strPtr(view.Description)
-	}
-	status := view.Status
-	if status == "" {
-		status = "Active"
-	}
-	st := playerclient.ViewStatus(status)
-	body.Status = &st
+	body := createViewCommand(view)
 
 	resp, err := client.CreateViewWithResponse(context.Background(), body)
 	if err != nil {
@@ -55,6 +43,24 @@ func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
 		return "", fmt.Errorf("player API returned status 201 with no view id when creating view")
 	}
 	return resp.JSON201.Id.String(), nil
+}
+
+func createViewCommand(view *structs.ViewInfo) playerclient.CreateViewCommand {
+	body := playerclient.CreateViewCommand{
+		Name:            strPtr(view.Name),
+		CreateAdminTeam: boolPtr(view.CreateAdminTeam),
+		IsTemplate:      boolPtr(view.IsTemplate),
+	}
+	if view.Description != "" {
+		body.Description = strPtr(view.Description)
+	}
+	status := view.Status
+	if status == "" {
+		status = "Active"
+	}
+	st := playerclient.ViewStatus(status)
+	body.Status = &st
+	return body
 }
 
 // ReadView reads a view's fields plus its applications and teams.

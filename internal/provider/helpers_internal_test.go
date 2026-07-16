@@ -52,7 +52,7 @@ func instObj(t *testing.T, name string) types.Object {
 	t.Helper()
 	o, d := types.ObjectValue(viewAppInstanceAttrTypes, map[string]attr.Value{
 		"name":          types.StringValue(name),
-		"display_order": types.Float64Value(0),
+		"display_order": newPlayerFloat32Value(0),
 		"id":            types.StringValue(""),
 	})
 	if d.HasError() {
@@ -100,6 +100,27 @@ func stringSet(t *testing.T, ss ...string) types.Set {
 		t.Fatalf("building string set: %v", d)
 	}
 	return set
+}
+
+func TestPlayerFloat32SemanticEquals(t *testing.T) {
+	configured := newPlayerFloat32Value(0.1)
+	stored := newPlayerFloat32Value(float64(float32(0.1)))
+
+	equal, diags := configured.Float64SemanticEquals(context.Background(), stored)
+	if diags.HasError() {
+		t.Fatalf("checking rounded value: %v", diags)
+	}
+	if !equal {
+		t.Fatal("0.1 should be semantically equal to its float32 round trip")
+	}
+
+	different, diags := configured.Float64SemanticEquals(context.Background(), newPlayerFloat32Value(0.2))
+	if diags.HasError() {
+		t.Fatalf("checking different value: %v", diags)
+	}
+	if different {
+		t.Fatal("0.1 should not be semantically equal to 0.2")
+	}
 }
 
 // namedBlockList builds a list of objects that have a "name" attribute, mirroring the

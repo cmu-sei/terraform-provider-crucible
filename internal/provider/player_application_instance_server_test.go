@@ -5,6 +5,7 @@ package provider_test
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/api"
@@ -39,23 +40,27 @@ func TestAccPlayerApplicationInstance(t *testing.T) {
 				),
 			},
 			{
-				Config: tfConfig(playerApplicationInstanceConfig(viewName, 2)),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("crucible_player_application_instance.test", "display_order", "2"),
-				),
-			},
-			{
-				Config: tfConfig(playerApplicationInstanceConfig(viewName, 2)),
-				ConfigPlanChecks: resource.ConfigPlanChecks{
-					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-				},
-			},
-			{
 				ResourceName:      "crucible_player_application_instance.test",
 				ImportState:       true,
 				ImportStateVerify: true,
 				ImportStateIdFunc: func(*terraform.State) (string, error) {
 					return teamID + "/" + instanceID, nil
+				},
+			},
+			{
+				Config: tfConfig(playerApplicationInstanceConfig(viewName, 0.1)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"crucible_player_application_instance.test",
+						"display_order",
+						"0.1",
+					),
+				),
+			},
+			{
+				Config: tfConfig(playerApplicationInstanceConfig(viewName, 0.1)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 				},
 			},
 			{
@@ -86,14 +91,134 @@ resource "crucible_player_team" "application_instance_parent" {
 `, viewName)
 }
 
-func playerApplicationInstanceConfig(viewName string, displayOrder int) string {
+func playerApplicationInstanceConfig(viewName string, displayOrder float64) string {
 	return playerApplicationInstanceParentConfig(viewName) + fmt.Sprintf(`
 resource "crucible_player_application_instance" "test" {
   team_id        = crucible_player_team.application_instance_parent.id
   application_id = crucible_player_application.application_instance_parent.id
-  display_order  = %[1]d
+  display_order  = %[1]g
 }
 `, displayOrder)
+}
+
+func TestAccPlayerApplicationInstanceRejectsCrossViewCreate(t *testing.T) {
+	const name = "tf-acc-application-instance-cross-view-create"
+	sweepViewByName(t, name+"-application")
+	sweepViewByName(t, name+"-team")
+	registerViewCleanupByName(t, name+"-application")
+	registerViewCleanupByName(t, name+"-team")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{{
+			Config:      tfConfig(playerApplicationInstanceCrossViewConfig(name)),
+			ExpectError: regexp.MustCompile(`player API returned with status 4[0-9]{2} when adding application to team`),
+		}},
+	})
+}
+
+func TestAccPlayerApplicationInstanceRejectsCrossViewUpdate(t *testing.T) {
+	const name = "tf-acc-application-instance-cross-view-update"
+	sweepViewByName(t, name+"-one")
+	sweepViewByName(t, name+"-two")
+	registerViewCleanupByName(t, name+"-one")
+	registerViewCleanupByName(t, name+"-two")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{{
+			Config: tfConfig(playerApplicationInstanceCrossViewUpdateConfig(name)),
+			Check:  testAccPlayerApplicationInstanceCrossViewUpdateRejected,
+		}},
+	})
+}
+
+func playerApplicationInstanceCrossViewConfig(name string) string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "application" {
+  name              = %[1]q
+  create_admin_team = false
+  child_management  = "standalone"
+}
+resource "crucible_player_view" "team" {
+  name              = %[2]q
+  create_admin_team = false
+  child_management  = "standalone"
+}
+resource "crucible_player_application" "cross_view" {
+  view_id = crucible_player_view.application.id
+  name    = "cross-view"
+}
+resource "crucible_player_team" "cross_view" {
+  view_id = crucible_player_view.team.id
+  name    = "cross-view"
+}
+resource "crucible_player_application_instance" "cross_view" {
+  team_id        = crucible_player_team.cross_view.id
+  application_id = crucible_player_application.cross_view.id
+}
+`, name+"-application", name+"-team")
+}
+
+func playerApplicationInstanceCrossViewUpdateConfig(name string) string {
+	return fmt.Sprintf(`
+resource "crucible_player_view" "one" {
+  name              = %[1]q
+  create_admin_team = false
+  child_management  = "standalone"
+}
+resource "crucible_player_view" "two" {
+  name              = %[2]q
+  create_admin_team = false
+  child_management  = "standalone"
+}
+resource "crucible_player_application" "one" {
+  view_id = crucible_player_view.one.id
+  name    = "one"
+}
+resource "crucible_player_application" "two" {
+  view_id = crucible_player_view.two.id
+  name    = "two"
+}
+resource "crucible_player_team" "one" {
+  view_id = crucible_player_view.one.id
+  name    = "one"
+}
+resource "crucible_player_application_instance" "test" {
+  team_id        = crucible_player_team.one.id
+  application_id = crucible_player_application.one.id
+}
+`, name+"-one", name+"-two")
+}
+
+func testAccPlayerApplicationInstanceCrossViewUpdateRejected(s *terraform.State) error {
+	instance := s.RootModule().Resources["crucible_player_application_instance.test"].Primary
+	team := s.RootModule().Resources["crucible_player_team.one"].Primary
+	originalApplication := s.RootModule().Resources["crucible_player_application.one"].Primary
+	crossViewApplication := s.RootModule().Resources["crucible_player_application.two"].Primary
+
+	err := api.UpdatePlayerApplicationInstance(&api.PlayerApplicationInstance{
+		ID:            instance.ID,
+		TeamID:        team.ID,
+		ApplicationID: crossViewApplication.ID,
+		DisplayOrder:  0,
+	}, getMap())
+	if err == nil {
+		return fmt.Errorf("cross-view application instance update unexpectedly succeeded")
+	}
+
+	actual, exists, readErr := api.ReadPlayerApplicationInstance(instance.ID, team.ID, getMap())
+	if readErr != nil {
+		return readErr
+	}
+	if !exists {
+		return fmt.Errorf("application instance %s disappeared after rejected update", instance.ID)
+	}
+	if actual.ApplicationID != originalApplication.ID {
+		return fmt.Errorf("application instance application_id = %s, want %s", actual.ApplicationID, originalApplication.ID)
+	}
+	return nil
 }
 
 func testAccPlayerApplicationInstanceAbsent(instanceID, teamID *string) resource.TestCheckFunc {

@@ -26,10 +26,10 @@ var (
 type playerApplicationInstanceResource struct{ playerConfiguredResource }
 
 type playerApplicationInstanceModel struct {
-	ID            types.String  `tfsdk:"id"`
-	TeamID        types.String  `tfsdk:"team_id"`
-	ApplicationID types.String  `tfsdk:"application_id"`
-	DisplayOrder  types.Float64 `tfsdk:"display_order"`
+	ID            types.String       `tfsdk:"id"`
+	TeamID        types.String       `tfsdk:"team_id"`
+	ApplicationID types.String       `tfsdk:"application_id"`
+	DisplayOrder  playerFloat32Value `tfsdk:"display_order"`
 }
 
 func NewPlayerApplicationInstanceResource() resource.Resource {
@@ -51,6 +51,7 @@ func (r *playerApplicationInstanceResource) Schema(_ context.Context, _ resource
 				Optional:    true,
 				Computed:    true,
 				Default:     float64default.StaticFloat64(0),
+				CustomType:  playerFloat32Type{},
 				Description: "Display order within the team.",
 			},
 		},
@@ -74,7 +75,7 @@ func (r *playerApplicationInstanceResource) read(model *playerApplicationInstanc
 	model.ID = types.StringValue(value.ID)
 	model.TeamID = types.StringValue(value.TeamID)
 	model.ApplicationID = types.StringValue(value.ApplicationID)
-	model.DisplayOrder = types.Float64Value(value.DisplayOrder)
+	model.DisplayOrder = newPlayerFloat32Value(value.DisplayOrder)
 	return true, diags
 }
 

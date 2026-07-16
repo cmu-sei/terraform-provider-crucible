@@ -110,7 +110,7 @@ var viewUserAttrTypes = map[string]attr.Type{
 
 var viewAppInstanceAttrTypes = map[string]attr.Type{
 	"name":          types.StringType,
-	"display_order": types.Float64Type,
+	"display_order": playerFloat32Type{},
 	"id":            types.StringType,
 }
 
@@ -284,8 +284,9 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 										// carried forward or it re-plans as "known
 										// after apply" on a sibling edit. Verified by
 										// mutation test.
-										Optional: true,
-										Computed: true,
+										Optional:   true,
+										Computed:   true,
+										CustomType: playerFloat32Type{},
 										PlanModifiers: []planmodifier.Float64{
 											float64planmodifier.UseStateForUnknown(),
 										},
@@ -351,12 +352,6 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	plan.ID = types.StringValue(id)
-	if view.IsTemplate {
-		if err := api.UpdateView(view, r.cfg, id); err != nil {
-			resp.Diagnostics.AddError("Error setting view template status", err.Error())
-			return
-		}
-	}
 	if plan.ChildManagement.ValueString() == "standalone" {
 		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -921,9 +916,9 @@ func expandTeams(ctx context.Context, list types.List) ([]interface{}, diag.Diag
 		instances := []interface{}{}
 		if !t.AppInstance.IsNull() && !t.AppInstance.IsUnknown() {
 			var is []struct {
-				Name         types.String  `tfsdk:"name"`
-				DisplayOrder types.Float64 `tfsdk:"display_order"`
-				ID           types.String  `tfsdk:"id"`
+				Name         types.String       `tfsdk:"name"`
+				DisplayOrder playerFloat32Value `tfsdk:"display_order"`
+				ID           types.String       `tfsdk:"id"`
 			}
 			d := t.AppInstance.ElementsAs(ctx, &is, false)
 			diags.Append(d...)
@@ -1010,7 +1005,7 @@ func flattenTeamMap(ctx context.Context, m map[string]interface{}) (attr.Value, 
 			}
 			obj, d := types.ObjectValue(viewAppInstanceAttrTypes, map[string]attr.Value{
 				"name":          types.StringValue(ifaceStr(inst["name"])),
-				"display_order": types.Float64Value(order),
+				"display_order": newPlayerFloat32Value(order),
 				"id":            types.StringValue(ifaceStr(inst["id"])),
 			})
 			diags.Append(d...)
@@ -1160,6 +1155,7 @@ func updateApps(viewID string, m map[string]string, old, current []interface{}) 
 // updateTeams reconciles the teams within a view.
 func updateTeams(m map[string]string, viewID string, old, current, applications []interface{}) error {
 	toDelete := new([]string)
+	defaultTeamsToDelete := new([]string)
 	toUpdate := new([]*structs.TeamInfo)
 	toCreate := new([]*structs.TeamInfo)
 
@@ -1171,6 +1167,9 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 		value := util.As[string](oldMap["team_id"])
 		if !util.PairInList(current, "team_id", value) {
 			*toDelete = append(*toDelete, value)
+			if util.As[bool](oldMap["default"]) {
+				*defaultTeamsToDelete = append(*defaultTeamsToDelete, value)
+			}
 		} else {
 			for _, curr := range current {
 				currMap := util.As[map[string]interface{}](curr)
@@ -1241,6 +1240,11 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 		}
 	}
 
+	for _, teamID := range *defaultTeamsToDelete {
+		if err := api.ReconcileDefaultTeam(viewID, teamID, false, m); err != nil {
+			return err
+		}
+	}
 	if err := api.DeleteTeams(toDelete, m); err != nil {
 		return err
 	}
