@@ -24,24 +24,20 @@ func TestAccPlayerTeam(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(playerTeamConfig(viewName, "students", false)),
+				Config: tfConfig(playerTeamConfig(viewName, "students")),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					captureID("crucible_player_team.test", &teamID),
 					resource.TestCheckResourceAttrSet("crucible_player_team.test", "id"),
 					resource.TestCheckResourceAttr("crucible_player_team.test", "name", "students"),
 					resource.TestCheckResourceAttr("crucible_player_team.test", "role", "View Member"),
-					resource.TestCheckResourceAttr("crucible_player_team.test", "default", "false"),
 					resource.TestCheckResourceAttr("crucible_player_team.test", "permissions.#", "0"),
 					resource.TestCheckResourceAttr("crucible_player_team.test", "scoped_team_ids.#", "0"),
-					testAccVerifyPlayerTeamDefault(false),
 				),
 			},
 			{
-				Config: tfConfig(playerTeamConfig(viewName, "students-updated", true)),
+				Config: tfConfig(playerTeamConfig(viewName, "students-updated")),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_team.test", "name", "students-updated"),
-					resource.TestCheckResourceAttr("crucible_player_team.test", "default", "true"),
-					testAccVerifyPlayerTeamDefault(true),
 				),
 			},
 			{
@@ -50,14 +46,7 @@ func TestAccPlayerTeam(t *testing.T) {
 				ImportStateVerify: true,
 			},
 			{
-				Config: tfConfig(playerTeamConfig(viewName, "students-updated", false)),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("crucible_player_team.test", "default", "false"),
-					testAccVerifyPlayerTeamDefault(false),
-				),
-			},
-			{
-				Config: tfConfig(playerTeamConfig(viewName, "students-updated", false)),
+				Config: tfConfig(playerTeamConfig(viewName, "students-updated")),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 				},
@@ -80,33 +69,13 @@ resource "crucible_player_view" "team_parent" {
 `, viewName)
 }
 
-func playerTeamConfig(viewName, teamName string, defaultTeam bool) string {
+func playerTeamConfig(viewName, teamName string) string {
 	return playerTeamParentConfig(viewName) + fmt.Sprintf(`
 resource "crucible_player_team" "test" {
   view_id = crucible_player_view.team_parent.id
   name    = %[1]q
-  default = %[2]t
 }
-`, teamName, defaultTeam)
-}
-
-func testAccVerifyPlayerTeamDefault(expected bool) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		view := s.RootModule().Resources["crucible_player_view.team_parent"]
-		team := s.RootModule().Resources["crucible_player_team.test"]
-		remote, err := api.ReadViewTopLevel(view.Primary.ID, getMap())
-		if err != nil {
-			return err
-		}
-		expectedID := ""
-		if expected {
-			expectedID = team.Primary.ID
-		}
-		if remote.DefaultTeamID != expectedID {
-			return fmt.Errorf("default team id = %q, want %q", remote.DefaultTeamID, expectedID)
-		}
-		return nil
-	}
+`, teamName)
 }
 
 func testAccPlayerTeamAbsent(id *string) resource.TestCheckFunc {

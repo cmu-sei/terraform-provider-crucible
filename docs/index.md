@@ -14,6 +14,7 @@ The Crucible provider enables [Terraform](https://www.terraform.io/) to manage r
 - [`crucible_player_view`](resources/player_view.md) — Manage views, teams, and applications in the Player API
 - [`crucible_player_application`](resources/player_application.md) — Manage a standalone Player application
 - [`crucible_player_team`](resources/player_team.md) — Manage a standalone Player team
+- [`crucible_player_view_default_team`](resources/player_view_default_team.md) — Manage a Player view's default team
 - [`crucible_player_team_user`](resources/player_team_user.md) — Manage a Player team membership
 - [`crucible_player_application_instance`](resources/player_application_instance.md) — Assign an application to a Player team
 - [`crucible_player_application_template`](resources/player_application_template.md) — Manage application templates in the Player API

@@ -15,7 +15,6 @@ resource "crucible_player_team" "students" {
   view_id = crucible_player_view.example.id
   name    = "students"
   role    = "View Member"
-  default = true
 
   permissions     = ["00000000-0000-0000-0000-000000000001"]
   scoped_team_ids = [crucible_player_team.observers.id]
@@ -29,7 +28,6 @@ resource "crucible_player_team" "students" {
 - `view_id` - (Required, Forces replacement) Owning view UUID.
 - `name` - (Required) Team name.
 - `role` - (Optional) Team role name. Defaults to `"View Member"`.
-- `default` - (Optional) Whether this is the owning view's default team. Defaults to `false`.
 - `permissions` - (Optional) Complete set of team-permission UUIDs. Defaults to `[]`.
 - `scoped_team_ids` - (Optional) Complete set of target team UUIDs. Defaults to `[]`.
 
@@ -44,5 +42,3 @@ terraform import crucible_player_team.students <team_uuid>
 ```
 
 Deleting the parent view cascades to the team, memberships, and application instances. The provider cannot validate ownership when `view_id` is hardcoded.
-
-Player stores one default team per view. Ensure only one standalone team for a view has `default = true`.

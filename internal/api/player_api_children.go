@@ -30,7 +30,6 @@ type PlayerTeam struct {
 	ViewID        string
 	Name          string
 	Role          string
-	Default       bool
 	Permissions   []string
 	ScopedTeamIDs []string
 }
@@ -193,7 +192,7 @@ func CreatePlayerTeam(team *PlayerTeam, m map[string]string) error {
 	if err := ReconcilePlayerTeamRelationships(team.ID, team.Permissions, team.ScopedTeamIDs, m); err != nil {
 		return err
 	}
-	return ReconcileDefaultTeam(team.ViewID, team.ID, team.Default, m)
+	return nil
 }
 
 func ReadPlayerTeam(id string, m map[string]string) (*PlayerTeam, bool, error) {
@@ -237,11 +236,6 @@ func ReadPlayerTeam(id string, m map[string]string) (*PlayerTeam, bool, error) {
 	}
 	sort.Strings(out.Permissions)
 	sort.Strings(out.ScopedTeamIDs)
-	view, err := ReadViewTopLevel(out.ViewID, m)
-	if err != nil {
-		return nil, false, err
-	}
-	out.Default = view.DefaultTeamID == out.ID
 	return out, true, nil
 }
 
@@ -272,7 +266,7 @@ func UpdatePlayerTeam(team *PlayerTeam, m map[string]string) error {
 	if err := ReconcilePlayerTeamRelationships(team.ID, team.Permissions, team.ScopedTeamIDs, m); err != nil {
 		return err
 	}
-	return ReconcileDefaultTeam(team.ViewID, team.ID, team.Default, m)
+	return nil
 }
 
 func ReconcilePlayerTeamRelationships(teamID string, desiredPermissions, desiredScopes []string, m map[string]string) error {

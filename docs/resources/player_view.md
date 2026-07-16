@@ -57,7 +57,7 @@ resource "crucible_player_view" "example" {
 - `status` - (Optional) The status of this view. Defaults to `"Active"`.
 - `create_admin_team` - (Optional) Whether to automatically create an Admin team. Defaults to `true`.
 - `is_template` - (Optional) Whether the view is a reusable Player template. Defaults to `false`.
-- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"standalone"` ignores remote children so they can be managed with standalone resources. Standalone mode requires `create_admin_team = false` and rejects `application` and `team` blocks.
+- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"standalone"` ignores remote children so they can be managed with standalone resources. Standalone mode requires `create_admin_team = false` and rejects `application` and `team` blocks. Use `crucible_player_view_default_team` to select a default standalone team.
 
 An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "standalone"` when unmanaged or standalone children must be ignored.
 
