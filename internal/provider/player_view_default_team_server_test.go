@@ -44,6 +44,8 @@ func TestAccPlayerViewDefaultTeam(t *testing.T) {
 			{
 				Config: tfConfig(playerViewDefaultTeamConfig(viewName, "blue", true)),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("crucible_player_view.default_parent", "description", "default team blue"),
+					resource.TestCheckResourceAttr("crucible_player_view.default_parent", "is_template", "true"),
 					resource.TestCheckResourceAttrPair(resourceName, "team_id", "crucible_player_team.blue", "id"),
 					testAccVerifyPlayerViewDefaultTeam("crucible_player_team.blue"),
 				),
@@ -93,11 +95,19 @@ func TestAccPlayerViewDefaultTeamRejectsDuplicate(t *testing.T) {
 }
 
 func playerViewDefaultTeamConfig(viewName, selected string, includeAssociation bool) string {
+	description := "no default team"
+	isTemplate := false
+	if selected != "" {
+		description = "default team " + selected
+		isTemplate = selected == "blue"
+	}
 	config := fmt.Sprintf(`
 resource "crucible_player_view" "default_parent" {
   name              = %[1]q
+  description       = %[2]q
   create_admin_team = false
   child_management  = "standalone"
+  is_template       = %[3]t
 }
 
 resource "crucible_player_team" "red" {
@@ -109,7 +119,7 @@ resource "crucible_player_team" "blue" {
   view_id = crucible_player_view.default_parent.id
   name    = "blue"
 }
-`, viewName)
+`, viewName, description, isTemplate)
 	if includeAssociation {
 		config += fmt.Sprintf(`
 resource "crucible_player_view_default_team" "test" {

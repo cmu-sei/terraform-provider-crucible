@@ -119,6 +119,17 @@ func (r *playerTeamResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 	plan.ID = types.StringValue(value.ID)
+	checkpoint := plan
+	checkpoint.Permissions = emptyStringSet()
+	checkpoint.ScopedTeamIDs = emptyStringSet()
+	resp.Diagnostics.Append(resp.State.Set(ctx, &checkpoint)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := api.ReconcilePlayerTeamRelationships(value.ID, value.Permissions, value.ScopedTeamIDs, r.cfg); err != nil {
+		resp.Diagnostics.AddError("Error configuring Player team relationships", err.Error())
+		return
+	}
 	_, readDiags := r.read(&plan)
 	resp.Diagnostics.Append(readDiags...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)

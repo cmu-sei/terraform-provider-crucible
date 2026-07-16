@@ -7,12 +7,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/google/uuid"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 )
+
+var viewMutationMu sync.Mutex
 
 // This file adapts the provider's view operations onto the oapi-codegen-generated
 // Player API client (internal/playerclient). Exported function signatures are
@@ -114,6 +117,9 @@ func ReadViewTopLevel(id string, m map[string]string) (*structs.ViewInfo, error)
 
 // UpdateView updates a view's top-level fields.
 func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
+	viewMutationMu.Lock()
+	defer viewMutationMu.Unlock()
+
 	current, err := ReadViewTopLevel(id, m)
 	if err != nil {
 		return err
@@ -126,6 +132,9 @@ func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
 // true. When desired is false, it only clears the setting if teamID currently
 // owns it, so updating a non-default team cannot unset another team.
 func ReconcileDefaultTeam(viewID, teamID string, desired bool, m map[string]string) error {
+	viewMutationMu.Lock()
+	defer viewMutationMu.Unlock()
+
 	view, err := ReadViewTopLevel(viewID, m)
 	if err != nil {
 		return err

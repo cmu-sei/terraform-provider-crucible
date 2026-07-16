@@ -189,9 +189,6 @@ func CreatePlayerTeam(team *PlayerTeam, m map[string]string) error {
 		return fmt.Errorf("player API returned status %d without a created team id", resp.StatusCode())
 	}
 	team.ID = resp.JSON201.Id.String()
-	if err := ReconcilePlayerTeamRelationships(team.ID, team.Permissions, team.ScopedTeamIDs, m); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -350,12 +347,12 @@ func CreatePlayerTeamUser(membership *PlayerTeamUser, m map[string]string) error
 	}
 	id, err := findMembershipIDByTeam(membership.UserID, membership.TeamID, m)
 	if err != nil {
-		return err
+		if rollbackErr := DeletePlayerTeamUser(membership.TeamID, membership.UserID, m); rollbackErr != nil {
+			return fmt.Errorf("find created team membership: %w; rollback failed: %v", err, rollbackErr)
+		}
+		return fmt.Errorf("find created team membership: %w", err)
 	}
 	membership.ID = id
-	if membership.Role != nil {
-		return UpdatePlayerTeamUser(membership, m)
-	}
 	return nil
 }
 

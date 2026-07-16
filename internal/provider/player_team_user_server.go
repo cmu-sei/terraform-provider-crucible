@@ -89,6 +89,18 @@ func (r *playerTeamUserResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 	plan.ID = types.StringValue(value.ID)
+	checkpoint := plan
+	checkpoint.Role = types.StringNull()
+	resp.Diagnostics.Append(resp.State.Set(ctx, &checkpoint)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if value.Role != nil {
+		if err := api.UpdatePlayerTeamUser(value, r.cfg); err != nil {
+			resp.Diagnostics.AddError("Error configuring Player team membership role", err.Error())
+			return
+		}
+	}
 	_, diags := r.read(&plan)
 	resp.Diagnostics.Append(diags...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)

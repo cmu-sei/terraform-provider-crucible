@@ -65,10 +65,10 @@ func (r *playerViewDefaultTeamResource) validateTeam(viewID, teamID string) erro
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("Player team %s does not exist", teamID)
+		return fmt.Errorf("player team %s does not exist", teamID)
 	}
 	if team.ViewID != viewID {
-		return fmt.Errorf("Player team %s belongs to view %s, not view %s", teamID, team.ViewID, viewID)
+		return fmt.Errorf("player team %s belongs to view %s, not view %s", teamID, team.ViewID, viewID)
 	}
 	return nil
 }

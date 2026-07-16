@@ -90,28 +90,28 @@ func TestAccViewTemplate(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(viewTemplateConfig(viewName, true)),
+				Config: tfConfig(viewTemplateConfig(true)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "is_template", "true"),
-					testAccVerifyRemoteViewTemplate(resourceName, true),
+					testAccVerifyRemoteViewTemplate(true),
 				),
 			},
 			{
-				Config: tfConfig(viewTemplateConfig(viewName, false)),
+				Config: tfConfig(viewTemplateConfig(false)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "is_template", "false"),
-					testAccVerifyRemoteViewTemplate(resourceName, false),
+					testAccVerifyRemoteViewTemplate(false),
 				),
 			},
 			{
-				Config: tfConfig(viewTemplateConfig(viewName, true)),
+				Config: tfConfig(viewTemplateConfig(true)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "is_template", "true"),
-					testAccVerifyRemoteViewTemplate(resourceName, true),
+					testAccVerifyRemoteViewTemplate(true),
 				),
 			},
 			{
-				Config: tfConfig(viewTemplateConfig(viewName, true)),
+				Config: tfConfig(viewTemplateConfig(true)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 				},
@@ -122,26 +122,27 @@ func TestAccViewTemplate(t *testing.T) {
 				ImportStateVerify: false,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "is_template", "true"),
-					testAccVerifyRemoteViewTemplate(resourceName, true),
+					testAccVerifyRemoteViewTemplate(true),
 				),
 			},
 		},
 	})
 }
 
-func viewTemplateConfig(viewName string, isTemplate bool) string {
+func viewTemplateConfig(isTemplate bool) string {
 	return fmt.Sprintf(`
 resource "crucible_player_view" "template" {
-  name              = %[1]q
+  name              = "tf-acc-view-template"
   create_admin_team = false
   child_management  = "standalone"
-  is_template       = %[2]t
+  is_template       = %[1]t
 }
-`, viewName, isTemplate)
+`, isTemplate)
 }
 
-func testAccVerifyRemoteViewTemplate(resourceName string, expected bool) resource.TestCheckFunc {
+func testAccVerifyRemoteViewTemplate(expected bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
+		const resourceName = "crucible_player_view.template"
 		rs, ok := s.RootModule().Resources[resourceName]
 		if !ok {
 			return fmt.Errorf("resource %s not found", resourceName)
