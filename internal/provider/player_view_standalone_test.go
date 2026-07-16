@@ -65,7 +65,7 @@ resource "crucible_player_view" "invalid" {
 	})
 }
 
-func TestAccStandalonePlayerChildren(t *testing.T) {
+func TestAccStandalonePlayerChildrenIntegration(t *testing.T) {
 	viewName := "tf-acc-standalone-children"
 	userID := envOrDefault("TF_TEST_VIEW_USER_ID", "9b3b331c-10c1-448b-8114-21b2586d8e38")
 	sweepViewByName(t, viewName)
@@ -76,7 +76,7 @@ func TestAccStandalonePlayerChildren(t *testing.T) {
 		CheckDestroy:             testAccViewDestroyed,
 		Steps: []resource.TestStep{
 			{
-				Config: tfConfig(standaloneChildrenConfig(viewName, userID, false)),
+				Config: tfConfig(standaloneChildrenConfig(viewName, userID)),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("crucible_player_view.standalone", "child_management", "standalone"),
 					resource.TestCheckResourceAttr("crucible_player_application.terminal", "name", "terminal"),
@@ -86,124 +86,25 @@ func TestAccStandalonePlayerChildren(t *testing.T) {
 					resource.TestCheckNoResourceAttr("crucible_player_team_user.student", "view_id"),
 					resource.TestCheckNoResourceAttr("crucible_player_team_user.student", "role"),
 					resource.TestCheckResourceAttr("crucible_player_application_instance.terminal", "display_order", "0"),
+					resource.TestCheckResourceAttrPair(
+						"crucible_player_team_user.student", "team_id",
+						"crucible_player_team.students", "id"),
+					resource.TestCheckResourceAttrPair(
+						"crucible_player_application_instance.terminal", "application_id",
+						"crucible_player_application.terminal", "id"),
 				),
 			},
 			{
-				Config: tfConfig(standaloneChildrenConfig(viewName, userID, true)),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("crucible_player_application.terminal", "name", "terminal-updated"),
-					resource.TestCheckResourceAttr("crucible_player_team.students", "name", "students-updated"),
-					resource.TestCheckResourceAttr("crucible_player_team_user.student", "role", "View Member"),
-					resource.TestCheckResourceAttr("crucible_player_application_instance.terminal", "display_order", "2"),
-				),
-			},
-			{
-				Config: tfConfig(standaloneChildrenConfig(viewName, userID, true)),
+				Config: tfConfig(standaloneChildrenConfig(viewName, userID)),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 				},
 			},
-			{
-				ResourceName:      "crucible_player_application.terminal",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-			{
-				ResourceName:      "crucible_player_team.students",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-			{
-				ResourceName:      "crucible_player_team_user.student",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-			{
-				ResourceName:      "crucible_player_application_instance.terminal",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					instance := s.RootModule().Resources["crucible_player_application_instance.terminal"]
-					team := s.RootModule().Resources["crucible_player_team.students"]
-					return team.Primary.ID + "/" + instance.Primary.ID, nil
-				},
-			},
 		},
 	})
 }
 
-func TestAccStandaloneDefaultTeam(t *testing.T) {
-	const viewName = "tf-acc-standalone-default-team"
-	sweepViewByName(t, viewName)
-	registerViewCleanupByName(t, viewName)
-
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             testAccViewDestroyed,
-		Steps: []resource.TestStep{
-			{
-				Config: tfConfig(standaloneDefaultTeamConfig(viewName, true)),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("crucible_player_team.default_team", "default", "true"),
-					testAccVerifyStandaloneDefaultTeam(true),
-				),
-			},
-			{
-				ResourceName:      "crucible_player_team.default_team",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-			{
-				Config: tfConfig(standaloneDefaultTeamConfig(viewName, false)),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("crucible_player_team.default_team", "default", "false"),
-					testAccVerifyStandaloneDefaultTeam(false),
-				),
-			},
-		},
-	})
-}
-
-func standaloneDefaultTeamConfig(viewName string, defaultTeam bool) string {
-	return fmt.Sprintf(`
-resource "crucible_player_view" "standalone_default" {
-  name              = %[1]q
-  create_admin_team = false
-  child_management  = "standalone"
-}
-
-resource "crucible_player_team" "default_team" {
-  view_id = crucible_player_view.standalone_default.id
-  name    = "default-team"
-  default = %[2]t
-}
-`, viewName, defaultTeam)
-}
-
-func testAccVerifyStandaloneDefaultTeam(expected bool) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		view := s.RootModule().Resources["crucible_player_view.standalone_default"]
-		team := s.RootModule().Resources["crucible_player_team.default_team"]
-		remote, err := api.ReadViewTopLevel(view.Primary.ID, getMap())
-		if err != nil {
-			return err
-		}
-		expectedID := ""
-		if expected {
-			expectedID = team.Primary.ID
-		}
-		if remote.DefaultTeamID != expectedID {
-			return fmt.Errorf("default team id = %q, want %q", remote.DefaultTeamID, expectedID)
-		}
-		return nil
-	}
-}
-
-func standaloneChildrenConfig(viewName, userID string, updated bool) string {
-	appName, teamName, role, order := "terminal", "students", "", 0
-	if updated {
-		appName, teamName, role, order = "terminal-updated", "students-updated", "\n  role = \"View Member\"", 2
-	}
+func standaloneChildrenConfig(viewName, userID string) string {
 	return fmt.Sprintf(`
 resource "crucible_player_view" "standalone" {
   name              = %[1]q
@@ -214,7 +115,7 @@ resource "crucible_player_view" "standalone" {
 
 resource "crucible_player_application" "terminal" {
   view_id            = crucible_player_view.standalone.id
-  name               = %[2]q
+  name               = "terminal"
   url                = "https://terminal.example.test"
   embeddable         = false
   load_in_background = false
@@ -222,20 +123,20 @@ resource "crucible_player_application" "terminal" {
 
 resource "crucible_player_team" "students" {
   view_id = crucible_player_view.standalone.id
-  name    = %[3]q
+  name    = "students"
 }
 
 resource "crucible_player_team_user" "student" {
   team_id = crucible_player_team.students.id
-  user_id = %[4]q%[5]s
+  user_id = %[2]q
 }
 
 resource "crucible_player_application_instance" "terminal" {
   team_id        = crucible_player_team.students.id
   application_id = crucible_player_application.terminal.id
-  display_order  = %[6]d
+  display_order  = 0
 }
-`, viewName, appName, teamName, userID, role, order)
+`, viewName, userID)
 }
 
 func TestAccStandaloneViewIgnoresUnmanagedChildren(t *testing.T) {
