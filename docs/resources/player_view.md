@@ -103,7 +103,7 @@ resource "crucible_player_view" "example" {
 - `status` - (Optional) The status of this view. Defaults to `"Active"`.
 - `create_admin_team` - (Optional) Whether to automatically create an Admin team. Defaults to `true`.
 - `is_template` - (Optional) Whether the view is a reusable Player template. Defaults to `false`.
-- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"standalone"` ignores remote children so they can be managed with standalone resources. Standalone mode requires `create_admin_team = false` and rejects `application` and `team` blocks. Use `crucible_player_view_default_team` to select a default standalone team.
+- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"standalone"` ignores remote children so they can be managed with standalone resources. Standalone mode requires `create_admin_team = false` and rejects `application` and `team` blocks. Existing standalone views cannot transition directly back to inline management. Use `crucible_player_view_default_team` to select a default standalone team.
 
 An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "standalone"` when unmanaged or standalone children must be ignored.
 
@@ -164,3 +164,13 @@ Import applications, teams, and memberships by UUID. Import application instance
 - Leave the Admin team unmanaged.
 
 Never combine the import and ownership-transition steps in one apply.
+
+## Migrating Standalone Children to Inline
+
+Directly changing `child_management` from `"standalone"` to `"inline"` is rejected because standalone view state does not contain the remote child collection. To migrate without replacing remote objects:
+
+1. Back up state, record the view UUID, and prepare inline blocks describing every remote child.
+2. Remove all standalone child resource addresses from state, then remove the view address. Do not apply while old config remains.
+3. Replace standalone resources with complete inline blocks and set inline mode.
+4. Import the existing view UUID back into the original view address.
+5. Run `terraform plan`; resolve every proposed child create, replace, or delete before applying.

@@ -190,6 +190,99 @@ resource "crucible_player_view" "standalone" {
 `, name, description)
 }
 
+func TestAccStandaloneToInlineRejected(t *testing.T) {
+	const viewName = "tf-acc-standalone-to-inline"
+	var appID, teamID string
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: tfConfig(standaloneViewOnlyConfig(viewName, "standalone ownership")),
+				Check:  testAccCreateUnmanagedViewChildren(&appID, &teamID),
+			},
+			{
+				Config:      tfConfig(inlineTransitionConfig(viewName, false)),
+				ExpectError: regexp.MustCompile(`Unsupported child ownership transition`),
+			},
+			{
+				Config: tfConfig(standaloneViewOnlyConfig(viewName, "standalone ownership")),
+				Check:  testAccVerifyUnmanagedViewChildren(&appID, &teamID),
+			},
+			{
+				Config:      tfConfig(inlineTransitionConfig(viewName, true)),
+				ExpectError: regexp.MustCompile(`Unsupported child ownership transition`),
+			},
+			{
+				Config: tfConfig(standaloneViewOnlyConfig(viewName, "standalone ownership")),
+				Check:  testAccVerifyUnmanagedViewChildren(&appID, &teamID),
+			},
+		},
+	})
+}
+
+func inlineTransitionConfig(viewName string, includeChildren bool) string {
+	children := ""
+	if includeChildren {
+		children = `
+  application {
+    name = "unmanaged-app"
+  }
+  team {
+    name = "unmanaged-team"
+  }`
+	}
+	return fmt.Sprintf(`
+resource "crucible_player_view" "standalone" {
+  name              = %[1]q
+  description       = "inline ownership"
+  create_admin_team = false
+  child_management  = "inline"
+%[2]s
+}
+`, viewName, children)
+}
+
+func testAccCreateUnmanagedViewChildren(appID, teamID *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		viewID := s.RootModule().Resources["crucible_player_view.standalone"].Primary.ID
+		app := &api.PlayerApplication{ViewID: viewID, Name: "unmanaged-app"}
+		if err := api.CreatePlayerApplication(app, getMap()); err != nil {
+			return err
+		}
+		team := &api.PlayerTeam{ViewID: viewID, Name: "unmanaged-team", Role: "View Member"}
+		if err := api.CreatePlayerTeam(team, getMap()); err != nil {
+			return err
+		}
+		*appID = app.ID
+		*teamID = team.ID
+		return nil
+	}
+}
+
+func testAccVerifyUnmanagedViewChildren(appID, teamID *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		if *appID == "" || *teamID == "" {
+			return fmt.Errorf("unmanaged child ids were not captured")
+		}
+		viewID := s.RootModule().Resources["crucible_player_view.standalone"].Primary.ID
+		view, err := api.ReadView(viewID, getMap())
+		if err != nil {
+			return err
+		}
+		if len(view.Applications) != 1 || view.Applications[0].ID != *appID {
+			return fmt.Errorf("remote applications changed after rejected transition: %+v", view.Applications)
+		}
+		if len(view.Teams) != 1 || ifaceString(view.Teams[0].ID) != *teamID {
+			return fmt.Errorf("remote teams changed after rejected transition: %+v", view.Teams)
+		}
+		return nil
+	}
+}
+
 func TestAccStandaloneApplicationsForEachPlan(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

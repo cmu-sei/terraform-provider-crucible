@@ -36,6 +36,7 @@ var (
 	_ resource.ResourceWithConfigure        = &viewResource{}
 	_ resource.ResourceWithConfigValidators = &viewResource{}
 	_ resource.ResourceWithImportState      = &viewResource{}
+	_ resource.ResourceWithModifyPlan       = &viewResource{}
 )
 
 // viewResource is the resource implementation for crucible_player_view.
@@ -98,6 +99,32 @@ func (viewChildManagementValidator) ValidateResource(ctx context.Context, req re
 	}
 	if config.CreateAdminTeam.IsNull() || (!config.CreateAdminTeam.IsUnknown() && config.CreateAdminTeam.ValueBool()) {
 		resp.Diagnostics.AddAttributeError(path.Root("create_admin_team"), "Invalid child ownership configuration", "create_admin_team must be explicitly set to false when child_management is \"standalone\".")
+	}
+}
+
+func (r *viewResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+
+	var state, plan viewModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if state.ChildManagement.IsNull() || state.ChildManagement.IsUnknown() ||
+		plan.ChildManagement.IsNull() || plan.ChildManagement.IsUnknown() {
+		return
+	}
+	if state.ChildManagement.ValueString() == "standalone" &&
+		plan.ChildManagement.ValueString() == "inline" {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("child_management"),
+			"Unsupported child ownership transition",
+			"Changing child_management from \"standalone\" to \"inline\" is unsupported because standalone state does not contain the remote child collection. "+
+				"Detach the standalone child resources and view from Terraform state, configure the complete inline child collection, and then re-import the view.",
+		)
 	}
 }
 
@@ -216,7 +243,7 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional:    true,
 				Computed:    true,
 				Default:     stringdefault.StaticString("inline"),
-				Description: "Selects whether child applications and teams are managed by nested blocks (inline) or standalone resources (standalone).",
+				Description: "Selects whether child applications and teams are managed by nested blocks (inline) or standalone resources (standalone). Existing standalone views cannot transition directly back to inline management.",
 				Validators: []validator.String{
 					stringvalidator.OneOf("inline", "standalone"),
 				},
