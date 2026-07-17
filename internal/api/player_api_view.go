@@ -223,27 +223,42 @@ func DeleteView(id string, m map[string]string) error {
 // empty string if none is found. Used by test cleanup to locate a leaked view
 // (whose computed id wasn't captured) by its known fixed name.
 func FindViewByName(name string, m map[string]string) (string, error) {
+	ids, err := viewIDsByName(name, m)
+	if err != nil || len(ids) == 0 {
+		return "", err
+	}
+	return ids[0], nil
+}
+
+// CountViewsByName returns the number of views whose name exactly matches.
+func CountViewsByName(name string, m map[string]string) (int, error) {
+	ids, err := viewIDsByName(name, m)
+	return len(ids), err
+}
+
+func viewIDsByName(name string, m map[string]string) ([]string, error) {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	resp, err := client.GetViewsWithResponse(context.Background())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return "", fmt.Errorf("player API returned with status code %d when listing views", resp.StatusCode())
+		return nil, fmt.Errorf("player API returned with status code %d when listing views", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
-		return "", nil
+		return nil, nil
 	}
+	ids := make([]string, 0)
 	for _, v := range *resp.JSON200 {
 		if v.Name != nil && *v.Name == name && v.Id != nil {
-			return v.Id.String(), nil
+			ids = append(ids, v.Id.String())
 		}
 	}
-	return "", nil
+	return ids, nil
 }
 
 // ViewExists returns true if a view with the given id exists.

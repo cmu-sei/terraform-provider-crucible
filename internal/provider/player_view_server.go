@@ -379,6 +379,24 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	plan.ID = types.StringValue(id)
+
+	// Persist ownership as soon as the remote view exists. Child blocks contain
+	// unknown computed IDs during create, so checkpoint known empty collections;
+	// a subsequent refresh discovers any children created before a later error.
+	checkpoint := plan
+	checkpoint.Application = types.ListValueMust(
+		types.ObjectType{AttrTypes: viewAppAttrTypes},
+		[]attr.Value{},
+	)
+	checkpoint.Team = types.ListValueMust(
+		types.ObjectType{AttrTypes: viewTeamAttrTypes},
+		[]attr.Value{},
+	)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &checkpoint)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if plan.ChildManagement.ValueString() == "standalone" {
 		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
 		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)

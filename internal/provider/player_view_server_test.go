@@ -268,6 +268,82 @@ func TestAccViewWithTeams(t *testing.T) {
 	})
 }
 
+func TestAccViewCreateChildFailurePreservesState(t *testing.T) {
+	const (
+		resourceName = "crucible_player_view.create_recovery"
+		viewName     = "tf-acc-view-create-recovery"
+	)
+	sweepViewByName(t, viewName)
+	registerViewCleanupByName(t, viewName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccViewDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config:      tfConfig(viewCreateRecoveryConfig(viewName, true)),
+				ExpectError: regexp.MustCompile(`Error creating view teams`),
+			},
+			{
+				PreConfig: func() {
+					createdViewID, err := api.FindViewByName(viewName, getMap())
+					if err != nil {
+						t.Fatalf("find partially created view: %v", err)
+					}
+					if createdViewID == "" {
+						t.Fatal("partially created view was not found")
+					}
+				},
+				Config: tfConfig(viewCreateRecoveryConfig(viewName, false)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccViewCountByName(viewName, 1),
+					resource.TestCheckResourceAttr(resourceName, "team.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "team.0.name", "students"),
+					resource.TestCheckResourceAttrSet(resourceName, "team.0.team_id"),
+					resource.TestCheckResourceAttr(resourceName, "team.0.permissions.#", "0"),
+				),
+			},
+			{
+				Config: tfConfig(viewCreateRecoveryConfig(viewName, false)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
+func viewCreateRecoveryConfig(viewName string, failRelationship bool) string {
+	permissions := ""
+	if failRelationship {
+		permissions = `
+    permissions = ["00000000-0000-0000-0000-000000000000"]`
+	}
+	return fmt.Sprintf(`
+resource "crucible_player_view" "create_recovery" {
+  name              = %[1]q
+  create_admin_team = false
+
+  team {
+    name = "students"%[2]s
+  }
+}
+`, viewName, permissions)
+}
+
+func testAccViewCountByName(name string, expected int) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		actual, err := api.CountViewsByName(name, getMap())
+		if err != nil {
+			return err
+		}
+		if actual != expected {
+			return fmt.Errorf("found %d views named %q, want %d", actual, name, expected)
+		}
+		return nil
+	}
+}
+
 func TestAccInlineDefaultTeam(t *testing.T) {
 	const viewName = "tf-acc-inline-default-team"
 	sweepViewByName(t, viewName)
