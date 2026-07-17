@@ -60,6 +60,9 @@ func CreateTeams(teams *[]*structs.TeamInfo, viewID string, m map[string]string)
 		}
 		teamID := resp.JSON201.Id.String()
 		(*teams)[i].ID = teamID
+		if err := ReconcileDefaultTeam(viewID, teamID, team.Default, m); err != nil {
+			return err
+		}
 
 		// Add each user to the team, and set its role if configured.
 		for _, user := range team.Users {
@@ -87,7 +90,7 @@ func CreateTeams(teams *[]*structs.TeamInfo, viewID string, m map[string]string)
 }
 
 // UpdateTeams updates the specified teams' name and role.
-func UpdateTeams(teams *[]*structs.TeamInfo, m map[string]string) error {
+func UpdateTeams(teams *[]*structs.TeamInfo, viewID string, m map[string]string) error {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
@@ -114,6 +117,9 @@ func UpdateTeams(teams *[]*structs.TeamInfo, m map[string]string) error {
 		}
 		if resp.StatusCode() != http.StatusOK {
 			return fmt.Errorf("player API returned with status code %d when updating team. %d teams updated before error", resp.StatusCode(), i)
+		}
+		if err := ReconcileDefaultTeam(viewID, teamID.String(), team.Default, m); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -373,6 +379,10 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 	if resp.JSON200 == nil {
 		return teams, nil
 	}
+	view, err := ReadViewTopLevel(viewID, m)
+	if err != nil {
+		return nil, err
+	}
 
 	teamNamesByID := make(map[uuid.UUID]string, len(*resp.JSON200))
 	for _, team := range *resp.JSON200 {
@@ -412,6 +422,7 @@ func readTeams(viewID string, m map[string]string) (*[]structs.TeamInfo, error) 
 		}
 		if t.Id != nil {
 			info.ID = t.Id.String()
+			info.Default = view.DefaultTeamID == t.Id.String()
 		}
 		*teams = append(*teams, info)
 	}

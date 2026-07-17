@@ -170,6 +170,11 @@ func (p *crucibleProvider) Resources(_ context.Context) []func() resource.Resour
 		NewApplicationTemplateResource,
 		NewVirtualMachineResource,
 		NewViewResource,
+		NewPlayerApplicationResource,
+		NewPlayerTeamResource,
+		NewPlayerViewDefaultTeamResource,
+		NewPlayerTeamUserResource,
+		NewPlayerApplicationInstanceResource,
 	}
 }
 
@@ -177,5 +182,7 @@ func (p *crucibleProvider) Resources(_ context.Context) []func() resource.Resour
 func (p *crucibleProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewApplicationTemplateDataSource,
+		NewPlayerRoleDataSource,
+		NewPlayerTeamRoleDataSource,
 	}
 }

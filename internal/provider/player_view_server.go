@@ -15,23 +15,28 @@ import (
 	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ resource.Resource                = &viewResource{}
-	_ resource.ResourceWithConfigure   = &viewResource{}
-	_ resource.ResourceWithImportState = &viewResource{}
+	_ resource.Resource                     = &viewResource{}
+	_ resource.ResourceWithConfigure        = &viewResource{}
+	_ resource.ResourceWithConfigValidators = &viewResource{}
+	_ resource.ResourceWithImportState      = &viewResource{}
+	_ resource.ResourceWithModifyPlan       = &viewResource{}
 )
 
 // viewResource is the resource implementation for crucible_player_view.
@@ -45,8 +50,82 @@ type viewModel struct {
 	Description     types.String `tfsdk:"description"`
 	Status          types.String `tfsdk:"status"`
 	CreateAdminTeam types.Bool   `tfsdk:"create_admin_team"`
+	IsTemplate      types.Bool   `tfsdk:"is_template"`
+	ChildManagement types.String `tfsdk:"child_management"`
 	Application     types.List   `tfsdk:"application"`
 	Team            types.List   `tfsdk:"team"`
+}
+
+type viewChildManagementValidator struct{}
+
+func (viewChildManagementValidator) Description(context.Context) string {
+	return "standalone child management cannot be combined with inline children or automatic Admin-team creation"
+}
+
+func (v viewChildManagementValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (viewChildManagementValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var config viewModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defaultTeams := 0
+	if !config.Team.IsNull() && !config.Team.IsUnknown() {
+		for _, element := range config.Team.Elements() {
+			team, ok := element.(types.Object)
+			if !ok {
+				continue
+			}
+			value, ok := team.Attributes()["default"].(types.Bool)
+			if ok && !value.IsNull() && !value.IsUnknown() && value.ValueBool() {
+				defaultTeams++
+			}
+		}
+	}
+	if defaultTeams > 1 {
+		resp.Diagnostics.AddAttributeError(path.Root("team"), "Invalid default team configuration", "Only one inline team can have default set to true.")
+	}
+	if config.ChildManagement.IsNull() || config.ChildManagement.IsUnknown() || config.ChildManagement.ValueString() != "standalone" {
+		return
+	}
+	if !config.Application.IsNull() && !config.Application.IsUnknown() && len(config.Application.Elements()) > 0 {
+		resp.Diagnostics.AddAttributeError(path.Root("application"), "Invalid child ownership configuration", "application blocks cannot be configured when child_management is \"standalone\".")
+	}
+	if !config.Team.IsNull() && !config.Team.IsUnknown() && len(config.Team.Elements()) > 0 {
+		resp.Diagnostics.AddAttributeError(path.Root("team"), "Invalid child ownership configuration", "team blocks cannot be configured when child_management is \"standalone\".")
+	}
+	if config.CreateAdminTeam.IsNull() || (!config.CreateAdminTeam.IsUnknown() && config.CreateAdminTeam.ValueBool()) {
+		resp.Diagnostics.AddAttributeError(path.Root("create_admin_team"), "Invalid child ownership configuration", "create_admin_team must be explicitly set to false when child_management is \"standalone\".")
+	}
+}
+
+func (r *viewResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+
+	var state, plan viewModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if state.ChildManagement.IsNull() || state.ChildManagement.IsUnknown() ||
+		plan.ChildManagement.IsNull() || plan.ChildManagement.IsUnknown() {
+		return
+	}
+	if state.ChildManagement.ValueString() == "standalone" &&
+		plan.ChildManagement.ValueString() == "inline" {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("child_management"),
+			"Unsupported child ownership transition",
+			"Changing child_management from \"standalone\" to \"inline\" is unsupported because standalone state does not contain the remote child collection. "+
+				"Detach the standalone child resources and view from Terraform state, configure the complete inline child collection, and then re-import the view.",
+		)
+	}
 }
 
 // Object attribute types for the nested blocks. These mirror the SDKv1 schema
@@ -58,7 +137,7 @@ var viewUserAttrTypes = map[string]attr.Type{
 
 var viewAppInstanceAttrTypes = map[string]attr.Type{
 	"name":          types.StringType,
-	"display_order": types.Float64Type,
+	"display_order": playerFloat32Type{},
 	"id":            types.StringType,
 }
 
@@ -77,6 +156,7 @@ var viewTeamAttrTypes = map[string]attr.Type{
 	"team_id":      types.StringType,
 	"name":         types.StringType,
 	"role":         types.StringType,
+	"default":      types.BoolType,
 	"permissions":  types.ListType{ElemType: types.StringType},
 	"scoped_teams": types.SetType{ElemType: types.StringType},
 	"app_instance": types.ListType{ElemType: types.ObjectType{AttrTypes: viewAppInstanceAttrTypes}},
@@ -105,6 +185,10 @@ func (r *viewResource) Configure(_ context.Context, req resource.ConfigureReques
 		return
 	}
 	r.cfg = cfg
+}
+
+func (r *viewResource) ConfigValidators(context.Context) []resource.ConfigValidator {
+	return []resource.ConfigValidator{viewChildManagementValidator{}}
 }
 
 func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
@@ -149,6 +233,21 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Computed: true,
 				Default:  boolStaticTrue(),
 			},
+			"is_template": schema.BoolAttribute{
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(false),
+				Description: "Whether the view is a reusable template.",
+			},
+			"child_management": schema.StringAttribute{
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString("inline"),
+				Description: "Selects whether child applications and teams are managed by nested blocks (inline) or standalone resources (standalone). Existing standalone views cannot transition directly back to inline management.",
+				Validators: []validator.String{
+					stringvalidator.OneOf("inline", "standalone"),
+				},
+			},
 		},
 		Blocks: map[string]schema.Block{
 			"application": schema.ListNestedBlock{
@@ -181,6 +280,11 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 							Computed: true,
 							Default:  stringdefault.StaticString("View Member"),
 						},
+						"default": schema.BoolAttribute{
+							Optional: true,
+							Computed: true,
+							Default:  booldefault.StaticBool(false),
+						},
 						"permissions": schema.ListAttribute{
 							Optional:    true,
 							ElementType: types.StringType,
@@ -207,8 +311,9 @@ func (r *viewResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 										// carried forward or it re-plans as "known
 										// after apply" on a sibling edit. Verified by
 										// mutation test.
-										Optional: true,
-										Computed: true,
+										Optional:   true,
+										Computed:   true,
+										CustomType: playerFloat32Type{},
 										PlanModifiers: []planmodifier.Float64{
 											float64planmodifier.UseStateForUnknown(),
 										},
@@ -265,6 +370,7 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 		Description:     plan.Description.ValueString(),
 		Status:          plan.Status.ValueString(),
 		CreateAdminTeam: plan.CreateAdminTeam.ValueBool(),
+		IsTemplate:      plan.IsTemplate.ValueBool(),
 	}
 
 	id, err := api.CreateView(view, r.cfg)
@@ -273,6 +379,29 @@ func (r *viewResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	plan.ID = types.StringValue(id)
+
+	// Persist ownership as soon as the remote view exists. Child blocks contain
+	// unknown computed IDs during create, so checkpoint known empty collections;
+	// a subsequent refresh discovers any children created before a later error.
+	checkpoint := plan
+	checkpoint.Application = types.ListValueMust(
+		types.ObjectType{AttrTypes: viewAppAttrTypes},
+		[]attr.Value{},
+	)
+	checkpoint.Team = types.ListValueMust(
+		types.ObjectType{AttrTypes: viewTeamAttrTypes},
+		[]attr.Value{},
+	)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &checkpoint)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if plan.ChildManagement.ValueString() == "standalone" {
+		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		return
+	}
 
 	apps, diags := expandApps(ctx, plan.Application)
 	resp.Diagnostics.Append(diags...)
@@ -313,6 +442,9 @@ func (r *viewResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	if state.ChildManagement.IsNull() || state.ChildManagement.IsUnknown() {
+		state.ChildManagement = types.StringValue("inline")
+	}
 
 	exists, err := api.ViewExists(state.ID.ValueString(), r.cfg)
 	if err != nil {
@@ -324,7 +456,11 @@ func (r *viewResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	resp.Diagnostics.Append(r.read(ctx, &state)...)
+	if state.ChildManagement.ValueString() == "standalone" {
+		resp.Diagnostics.Append(r.readTopLevel(&state)...)
+	} else {
+		resp.Diagnostics.Append(r.read(ctx, &state)...)
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -352,9 +488,15 @@ func (r *viewResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		Name:        plan.Name.ValueString(),
 		Description: plan.Description.ValueString(),
 		Status:      plan.Status.ValueString(),
+		IsTemplate:  plan.IsTemplate.ValueBool(),
 	}
 	if err := api.UpdateView(view, r.cfg, id); err != nil {
 		resp.Diagnostics.AddError("Error updating view", err.Error())
+		return
+	}
+	if plan.ChildManagement.ValueString() == "standalone" {
+		resp.Diagnostics.Append(r.readTopLevel(&plan)...)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		return
 	}
 
@@ -433,8 +575,11 @@ func (r *viewResource) read(ctx context.Context, m *viewModel) diag.Diagnostics 
 	}
 
 	m.Name = types.StringValue(view.Name)
-	m.Description = types.StringValue(view.Description)
+	if view.Description != "" || !m.Description.IsNull() {
+		m.Description = types.StringValue(view.Description)
+	}
 	m.Status = types.StringValue(view.Status)
+	m.IsTemplate = types.BoolValue(view.IsTemplate)
 
 	// Order applications and teams to match the order already present in the
 	// model (the plan during create/update, or prior state during read). The
@@ -500,6 +645,22 @@ func (r *viewResource) read(ctx context.Context, m *viewModel) diag.Diagnostics 
 	diags.Append(d...)
 	m.Team = teamList
 
+	return diags
+}
+
+func (r *viewResource) readTopLevel(m *viewModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	view, err := api.ReadViewTopLevel(m.ID.ValueString(), r.cfg)
+	if err != nil {
+		diags.AddError("Error reading view", err.Error())
+		return diags
+	}
+	m.Name = types.StringValue(view.Name)
+	if view.Description != "" || !m.Description.IsNull() {
+		m.Description = types.StringValue(view.Description)
+	}
+	m.Status = types.StringValue(view.Status)
+	m.IsTemplate = types.BoolValue(view.IsTemplate)
 	return diags
 }
 
@@ -756,6 +917,7 @@ func expandTeams(ctx context.Context, list types.List) ([]interface{}, diag.Diag
 		TeamID      types.String `tfsdk:"team_id"`
 		Name        types.String `tfsdk:"name"`
 		Role        types.String `tfsdk:"role"`
+		Default     types.Bool   `tfsdk:"default"`
 		Permissions types.List   `tfsdk:"permissions"`
 		ScopedTeams types.Set    `tfsdk:"scoped_teams"`
 		AppInstance types.List   `tfsdk:"app_instance"`
@@ -799,9 +961,9 @@ func expandTeams(ctx context.Context, list types.List) ([]interface{}, diag.Diag
 		instances := []interface{}{}
 		if !t.AppInstance.IsNull() && !t.AppInstance.IsUnknown() {
 			var is []struct {
-				Name         types.String  `tfsdk:"name"`
-				DisplayOrder types.Float64 `tfsdk:"display_order"`
-				ID           types.String  `tfsdk:"id"`
+				Name         types.String       `tfsdk:"name"`
+				DisplayOrder playerFloat32Value `tfsdk:"display_order"`
+				ID           types.String       `tfsdk:"id"`
 			}
 			d := t.AppInstance.ElementsAs(ctx, &is, false)
 			diags.Append(d...)
@@ -818,6 +980,7 @@ func expandTeams(ctx context.Context, list types.List) ([]interface{}, diag.Diag
 			"team_id":      t.TeamID.ValueString(),
 			"name":         t.Name.ValueString(),
 			"role":         t.Role.ValueString(),
+			"default":      t.Default.ValueBool(),
 			"permissions":  permIface,
 			"scoped_teams": scopedIface,
 			"user":         users,
@@ -887,7 +1050,7 @@ func flattenTeamMap(ctx context.Context, m map[string]interface{}) (attr.Value, 
 			}
 			obj, d := types.ObjectValue(viewAppInstanceAttrTypes, map[string]attr.Value{
 				"name":          types.StringValue(ifaceStr(inst["name"])),
-				"display_order": types.Float64Value(order),
+				"display_order": newPlayerFloat32Value(order),
 				"id":            types.StringValue(ifaceStr(inst["id"])),
 			})
 			diags.Append(d...)
@@ -901,6 +1064,7 @@ func flattenTeamMap(ctx context.Context, m map[string]interface{}) (attr.Value, 
 		"team_id":      types.StringValue(ifaceStr(m["team_id"])),
 		"name":         types.StringValue(ifaceStr(m["name"])),
 		"role":         types.StringValue(ifaceStr(m["role"])),
+		"default":      types.BoolValue(util.As[bool](m["default"])),
 		"permissions":  permList,
 		"scoped_teams": scopedTeamSet,
 		"app_instance": instList,
@@ -1036,6 +1200,7 @@ func updateApps(viewID string, m map[string]string, old, current []interface{}) 
 // updateTeams reconciles the teams within a view.
 func updateTeams(m map[string]string, viewID string, old, current, applications []interface{}) error {
 	toDelete := new([]string)
+	defaultTeamsToDelete := new([]string)
 	toUpdate := new([]*structs.TeamInfo)
 	toCreate := new([]*structs.TeamInfo)
 
@@ -1047,6 +1212,9 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 		value := util.As[string](oldMap["team_id"])
 		if !util.PairInList(current, "team_id", value) {
 			*toDelete = append(*toDelete, value)
+			if util.As[bool](oldMap["default"]) {
+				*defaultTeamsToDelete = append(*defaultTeamsToDelete, value)
+			}
 		} else {
 			for _, curr := range current {
 				currMap := util.As[map[string]interface{}](curr)
@@ -1117,10 +1285,15 @@ func updateTeams(m map[string]string, viewID string, old, current, applications 
 		}
 	}
 
+	for _, teamID := range *defaultTeamsToDelete {
+		if err := api.ReconcileDefaultTeam(viewID, teamID, false, m); err != nil {
+			return err
+		}
+	}
 	if err := api.DeleteTeams(toDelete, m); err != nil {
 		return err
 	}
-	if err := api.UpdateTeams(toUpdate, m); err != nil {
+	if err := api.UpdateTeams(toUpdate, viewID, m); err != nil {
 		return err
 	}
 	if err := api.CreateTeams(toCreate, viewID, m); err != nil {

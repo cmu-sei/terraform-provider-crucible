@@ -5,9 +5,11 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"sort"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -15,6 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 // httpURLRegex validates that a string is an http:// or https:// URL,
@@ -64,6 +68,71 @@ func (unknownIfNull) PlanModifyString(_ context.Context, req planmodifier.String
 	if resp.PlanValue.IsNull() {
 		resp.PlanValue = types.StringUnknown()
 	}
+}
+
+var (
+	_ basetypes.Float64Typable                    = playerFloat32Type{}
+	_ basetypes.Float64ValuableWithSemanticEquals = playerFloat32Value{}
+)
+
+// playerFloat32Type keeps Terraform's number interface while comparing values
+// at the precision used by Player's float32 display-order contract.
+type playerFloat32Type struct {
+	basetypes.Float64Type
+}
+
+func (playerFloat32Type) Equal(other attr.Type) bool {
+	_, ok := other.(playerFloat32Type)
+	return ok
+}
+
+func (playerFloat32Type) String() string {
+	return "playerFloat32Type"
+}
+
+func (playerFloat32Type) ValueFromFloat64(_ context.Context, value basetypes.Float64Value) (basetypes.Float64Valuable, diag.Diagnostics) {
+	return playerFloat32Value{Float64Value: value}, nil
+}
+
+func (t playerFloat32Type) ValueFromTerraform(ctx context.Context, value tftypes.Value) (attr.Value, error) {
+	baseValue, err := t.Float64Type.ValueFromTerraform(ctx, value)
+	if err != nil {
+		return nil, err
+	}
+	floatValue, ok := baseValue.(basetypes.Float64Value)
+	if !ok {
+		return nil, fmt.Errorf("unexpected Player float32 value type %T", baseValue)
+	}
+	return playerFloat32Value{Float64Value: floatValue}, nil
+}
+
+func (playerFloat32Type) ValueType(context.Context) attr.Value {
+	return playerFloat32Value{}
+}
+
+type playerFloat32Value struct {
+	basetypes.Float64Value
+}
+
+func newPlayerFloat32Value(value float64) playerFloat32Value {
+	return playerFloat32Value{Float64Value: basetypes.NewFloat64Value(value)}
+}
+
+func (value playerFloat32Value) Equal(other attr.Value) bool {
+	otherValue, ok := other.(playerFloat32Value)
+	return ok && value.Float64Value.Equal(otherValue.Float64Value)
+}
+
+func (value playerFloat32Value) Float64SemanticEquals(ctx context.Context, other basetypes.Float64Valuable) (bool, diag.Diagnostics) {
+	otherValue, diags := other.ToFloat64Value(ctx)
+	if diags.HasError() {
+		return false, diags
+	}
+	return float32(value.ValueFloat64()) == float32(otherValue.ValueFloat64()), diags
+}
+
+func (playerFloat32Value) Type(context.Context) attr.Type {
+	return playerFloat32Type{}
 }
 
 // toStringSlice converts a framework types.List of strings into a []string.

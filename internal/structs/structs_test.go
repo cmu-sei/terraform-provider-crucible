@@ -120,6 +120,7 @@ func TestTeamInfoFromMap(t *testing.T) {
 		"team_id":      "t1",
 		"name":         "Admins",
 		"role":         "View Member",
+		"default":      true,
 		"permissions":  []interface{}{"perm-a", "perm-b"},
 		"scoped_teams": []interface{}{"Team B"},
 		"user": []interface{}{
@@ -130,6 +131,9 @@ func TestTeamInfoFromMap(t *testing.T) {
 
 	if got.ID != "t1" || got.Name != "Admins" || got.Role != "View Member" {
 		t.Errorf("scalar fields wrong: %+v", got)
+	}
+	if !got.Default {
+		t.Errorf("Default = false, want true")
 	}
 	if len(got.Permissions) != 2 || got.Permissions[0] != "perm-a" || got.Permissions[1] != "perm-b" {
 		t.Errorf("permissions = %v, want [perm-a perm-b]", got.Permissions)

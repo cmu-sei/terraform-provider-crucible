@@ -5243,6 +5243,9 @@
           "status": {
             "$ref": "#/components/schemas/ViewStatus"
           },
+          "isTemplate": {
+            "type": "boolean"
+          },
           "createAdminTeam": {
             "type": "boolean"
           }

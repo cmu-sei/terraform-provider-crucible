@@ -7,12 +7,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/google/uuid"
 
 	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
 	"github.com/cmu-sei/terraform-provider-crucible/internal/structs"
 )
+
+var viewMutationMu sync.Mutex
 
 // This file adapts the provider's view operations onto the oapi-codegen-generated
 // Player API client (internal/playerclient). Exported function signatures are
@@ -27,19 +30,7 @@ func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
 		return "", err
 	}
 
-	body := playerclient.CreateViewCommand{
-		Name:            strPtr(view.Name),
-		CreateAdminTeam: boolPtr(view.CreateAdminTeam),
-	}
-	if view.Description != "" {
-		body.Description = strPtr(view.Description)
-	}
-	status := view.Status
-	if status == "" {
-		status = "Active"
-	}
-	st := playerclient.ViewStatus(status)
-	body.Status = &st
+	body := createViewCommand(view)
 
 	resp, err := client.CreateViewWithResponse(context.Background(), body)
 	if err != nil {
@@ -54,8 +45,47 @@ func CreateView(view *structs.ViewInfo, m map[string]string) (string, error) {
 	return resp.JSON201.Id.String(), nil
 }
 
+func createViewCommand(view *structs.ViewInfo) playerclient.CreateViewCommand {
+	body := playerclient.CreateViewCommand{
+		Name:            strPtr(view.Name),
+		CreateAdminTeam: boolPtr(view.CreateAdminTeam),
+		IsTemplate:      boolPtr(view.IsTemplate),
+	}
+	if view.Description != "" {
+		body.Description = strPtr(view.Description)
+	}
+	status := view.Status
+	if status == "" {
+		status = "Active"
+	}
+	st := playerclient.ViewStatus(status)
+	body.Status = &st
+	return body
+}
+
 // ReadView reads a view's fields plus its applications and teams.
 func ReadView(id string, m map[string]string) (*structs.ViewInfo, error) {
+	view, err := ReadViewTopLevel(id, m)
+	if err != nil {
+		return nil, err
+	}
+
+	apps, err := readApps(id, m)
+	if err != nil {
+		return nil, err
+	}
+	teams, err := readTeams(id, m)
+	if err != nil {
+		return nil, err
+	}
+
+	view.Applications = *apps
+	view.Teams = *teams
+	return view, nil
+}
+
+// ReadViewTopLevel reads only fields owned by the view itself.
+func ReadViewTopLevel(id string, m map[string]string) (*structs.ViewInfo, error) {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return nil, err
@@ -81,26 +111,55 @@ func ReadView(id string, m map[string]string) (*structs.ViewInfo, error) {
 		Name:        derefStr(resp.JSON200.Name),
 		Description: derefStr(resp.JSON200.Description),
 	}
+	if resp.JSON200.DefaultTeamId != nil {
+		view.DefaultTeamID = resp.JSON200.DefaultTeamId.String()
+	}
+	view.IsTemplate = derefBool(resp.JSON200.IsTemplate, false)
 	if resp.JSON200.Status != nil {
 		view.Status = string(*resp.JSON200.Status)
 	}
-
-	apps, err := readApps(id, m)
-	if err != nil {
-		return nil, err
-	}
-	teams, err := readTeams(id, m)
-	if err != nil {
-		return nil, err
-	}
-
-	view.Applications = *apps
-	view.Teams = *teams
 	return view, nil
 }
 
 // UpdateView updates a view's top-level fields.
 func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
+	viewMutationMu.Lock()
+	defer viewMutationMu.Unlock()
+
+	current, err := ReadViewTopLevel(id, m)
+	if err != nil {
+		return err
+	}
+	view.DefaultTeamID = current.DefaultTeamID
+	return updateView(view, m, id)
+}
+
+// ReconcileDefaultTeam assigns teamID as the view's default when desired is
+// true. When desired is false, it only clears the setting if teamID currently
+// owns it, so updating a non-default team cannot unset another team.
+func ReconcileDefaultTeam(viewID, teamID string, desired bool, m map[string]string) error {
+	viewMutationMu.Lock()
+	defer viewMutationMu.Unlock()
+
+	view, err := ReadViewTopLevel(viewID, m)
+	if err != nil {
+		return err
+	}
+	if desired {
+		if view.DefaultTeamID == teamID {
+			return nil
+		}
+		view.DefaultTeamID = teamID
+	} else {
+		if view.DefaultTeamID != teamID {
+			return nil
+		}
+		view.DefaultTeamID = ""
+	}
+	return updateView(view, m, viewID)
+}
+
+func updateView(view *structs.ViewInfo, m map[string]string, id string) error {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
@@ -114,6 +173,14 @@ func UpdateView(view *structs.ViewInfo, m map[string]string, id string) error {
 	body := playerclient.EditViewCommand{
 		Name:        strPtr(view.Name),
 		Description: strPtr(view.Description),
+		IsTemplate:  boolPtr(view.IsTemplate),
+	}
+	if view.DefaultTeamID != "" {
+		defaultTeamID, err := uuid.Parse(view.DefaultTeamID)
+		if err != nil {
+			return err
+		}
+		body.DefaultTeamId = &defaultTeamID
 	}
 	if view.Status != "" {
 		st := playerclient.ViewStatus(view.Status)
@@ -156,27 +223,42 @@ func DeleteView(id string, m map[string]string) error {
 // empty string if none is found. Used by test cleanup to locate a leaked view
 // (whose computed id wasn't captured) by its known fixed name.
 func FindViewByName(name string, m map[string]string) (string, error) {
+	ids, err := viewIDsByName(name, m)
+	if err != nil || len(ids) == 0 {
+		return "", err
+	}
+	return ids[0], nil
+}
+
+// CountViewsByName returns the number of views whose name exactly matches.
+func CountViewsByName(name string, m map[string]string) (int, error) {
+	ids, err := viewIDsByName(name, m)
+	return len(ids), err
+}
+
+func viewIDsByName(name string, m map[string]string) ([]string, error) {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	resp, err := client.GetViewsWithResponse(context.Background())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return "", fmt.Errorf("player API returned with status code %d when listing views", resp.StatusCode())
+		return nil, fmt.Errorf("player API returned with status code %d when listing views", resp.StatusCode())
 	}
 	if resp.JSON200 == nil {
-		return "", nil
+		return nil, nil
 	}
+	ids := make([]string, 0)
 	for _, v := range *resp.JSON200 {
 		if v.Name != nil && *v.Name == name && v.Id != nil {
-			return v.Id.String(), nil
+			ids = append(ids, v.Id.String())
 		}
 	}
-	return "", nil
+	return ids, nil
 }
 
 // ViewExists returns true if a view with the given id exists.

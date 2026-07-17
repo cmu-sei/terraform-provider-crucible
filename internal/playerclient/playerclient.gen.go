@@ -295,6 +295,7 @@ type CreateViewCommand struct {
 	CreateAdminTeam *bool               `json:"createAdminTeam,omitempty"`
 	Description     *string             `json:"description,omitempty"`
 	Id              *openapi_types.UUID `json:"id,omitempty"`
+	IsTemplate      *bool               `json:"isTemplate,omitempty"`
 	Name            *string             `json:"name,omitempty"`
 	Status          *ViewStatus         `json:"status,omitempty"`
 }

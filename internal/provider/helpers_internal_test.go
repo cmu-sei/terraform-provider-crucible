@@ -52,7 +52,7 @@ func instObj(t *testing.T, name string) types.Object {
 	t.Helper()
 	o, d := types.ObjectValue(viewAppInstanceAttrTypes, map[string]attr.Value{
 		"name":          types.StringValue(name),
-		"display_order": types.Float64Value(0),
+		"display_order": newPlayerFloat32Value(0),
 		"id":            types.StringValue(""),
 	})
 	if d.HasError() {
@@ -102,6 +102,27 @@ func stringSet(t *testing.T, ss ...string) types.Set {
 	return set
 }
 
+func TestPlayerFloat32SemanticEquals(t *testing.T) {
+	configured := newPlayerFloat32Value(0.1)
+	stored := newPlayerFloat32Value(float64(float32(0.1)))
+
+	equal, diags := configured.Float64SemanticEquals(context.Background(), stored)
+	if diags.HasError() {
+		t.Fatalf("checking rounded value: %v", diags)
+	}
+	if !equal {
+		t.Fatal("0.1 should be semantically equal to its float32 round trip")
+	}
+
+	different, diags := configured.Float64SemanticEquals(context.Background(), newPlayerFloat32Value(0.2))
+	if diags.HasError() {
+		t.Fatalf("checking different value: %v", diags)
+	}
+	if different {
+		t.Fatal("0.1 should not be semantically equal to 0.2")
+	}
+}
+
 // namedBlockList builds a list of objects that have a "name" attribute, mirroring the
 // shape blockNameRank consumes. Uses the user attr types but only the relevant key.
 func namedBlockList(t *testing.T, attrTypes map[string]attr.Type, names ...string) types.List {
@@ -141,6 +162,8 @@ func newNullValue(at attr.Type) attr.Value {
 		return types.SetNull(t.ElemType)
 	case basetypes.Float64Type:
 		return types.Float64Null()
+	case basetypes.BoolType:
+		return types.BoolNull()
 	default:
 		return types.StringNull()
 	}
@@ -302,6 +325,7 @@ func TestTeamChildRanks(t *testing.T) {
 		"team_id":      types.StringValue(""),
 		"name":         types.StringValue("t1"),
 		"role":         types.StringValue(""),
+		"default":      types.BoolValue(false),
 		"permissions":  stringList(t, "perm-a", "perm-b"),
 		"scoped_teams": types.SetNull(types.StringType),
 		"app_instance": instList(t, "inst-a"),
@@ -337,6 +361,7 @@ func TestDesiredTeamScopes(t *testing.T) {
 			"team_id":      types.StringNull(),
 			"name":         types.StringValue(name),
 			"role":         types.StringNull(),
+			"default":      types.BoolValue(false),
 			"permissions":  types.ListNull(types.StringType),
 			"scoped_teams": scopes,
 			"app_instance": types.ListNull(types.ObjectType{AttrTypes: viewAppInstanceAttrTypes}),

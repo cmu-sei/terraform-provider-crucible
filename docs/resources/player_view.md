@@ -8,7 +8,60 @@ description: |-
 
 Manages views in Crucible's Player API, including the teams and applications within them.
 
+> **Warning:** Do not mix nested child blocks and standalone child resources for the same view. Mixed ownership is unsupported and can cause perpetual plan differences, overwritten settings, or deletion of child objects.
+
+> **Recommended:** For new configurations, prefer standalone child management
+> for independent lifecycles, `for_each`, imports, and clearer dependencies.
+> Inline management remains supported for existing and compact configurations.
+
 ## Example Usage
+
+### Standalone Child Management
+
+```hcl
+resource "crucible_player_view" "example" {
+  name              = "example"
+  create_admin_team = false
+  child_management  = "standalone"
+}
+
+data "crucible_player_application_template" "virtual_machines" {
+  name = "Virtual Machines"
+}
+
+resource "crucible_player_application" "virtual_machines" {
+  view_id                 = crucible_player_view.standalone.id
+  name                    = data.crucible_player_application_template.virtual_machines.name
+  application_template_id = data.crucible_player_application_template.virtual_machines.id
+}
+}
+
+resource "crucible_player_team" "students" {
+  view_id = crucible_player_view.example.id
+  name    = "students"
+}
+
+resource "crucible_player_view_default_team" "students" {
+  view_id = crucible_player_view.example.id
+  team_id = crucible_player_team.students.id
+}
+
+resource "crucible_player_application_instance" "virtual_machines_students" {
+  team_id        = crucible_player_team.students.id
+  application_id = crucible_player_application.virtual_machines.id
+  display_order  = 0
+}
+```
+
+The provider cannot verify that a standalone child targets a view configured
+for standalone ownership. Ensure all standalone children target a view with
+`child_management = "standalone"`.
+
+Deleting a view cascades to its applications, teams, memberships, and
+application instances in the Player API even in standalone mode. Use Terraform
+references so child resources are destroyed before their view.
+
+### Inline Child Management
 
 ```hcl
 resource "crucible_player_view" "example" {
@@ -16,6 +69,7 @@ resource "crucible_player_view" "example" {
   description       = "This was created from Terraform!"
   status            = "Active"
   create_admin_team = true
+  is_template       = true
 
   application {
     name               = "testApp"
@@ -26,6 +80,7 @@ resource "crucible_player_view" "example" {
   team {
     name = "test_team"
     role = "SomeRole"
+    default = true
     scoped_teams = ["observer_team"]
 
     user {
@@ -52,6 +107,12 @@ resource "crucible_player_view" "example" {
 - `description` - (Optional) A description for this view.
 - `status` - (Optional) The status of this view. Defaults to `"Active"`.
 - `create_admin_team` - (Optional) Whether to automatically create an Admin team. Defaults to `true`.
+- `is_template` - (Optional) Whether the view is a reusable Player template. Defaults to `false`.
+- `child_management` - (Optional) Child ownership mode. `"inline"` (the default) manages the complete child collection through nested blocks. `"standalone"` ignores remote children so they can be managed with standalone resources. `"standalone"` is the preferred option for new views, but `"inline"` is kept as the default for backwards compatibility.Standalone mode requires `create_admin_team = false` and rejects `application` and `team` blocks. Use `crucible_player_view_default_team` to select a default standalone team.
+
+Existing standalone views cannot transition directly back to inline management.
+
+An inline view with no child blocks authoritatively manages an empty child collection. Use `child_management = "standalone"` when unmanaged or standalone children must be ignored.
 
 ### Applications
 
@@ -75,6 +136,7 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 - `name` - (Required) The name of this team.
 - `team_id` - (Computed) The UUID of this team, assigned by the API.
 - `role` - (Optional) The name of the role this team falls under. Defaults to `"View Member"`.
+- `default` - (Optional) Whether this is the view's default team. Defaults to `false`. At most one inline team can be the default.
 - `permissions` - (Optional) A list of permission IDs for this team.
 - `scoped_teams` - (Optional) An unordered set of sibling team names onto which this team's permissions are scoped. Targets must be other `team` blocks in this view; a team cannot target itself. Defaults to `[]`. Terraform manages the complete set and removes API scope relationships not listed here.
 
@@ -92,3 +154,30 @@ The `team` block is optional and repeatable. Teams should be placed in alphabeti
 ## Attribute Reference
 
 - `id` - The UUID of the view.
+
+## Migrating Inline Children
+
+Migration requires two applies:
+
+1. Keep all nested blocks. Define matching standalone resources and import each existing application, team, membership, and application instance. Confirm the plan contains imports only.
+2. Remove the nested blocks, set `child_management = "standalone"`, and set `create_admin_team = false`. Confirm the plan only detaches nested state and does not replace or delete children.
+
+Import applications, teams, and memberships by UUID. Import application instances as `<team_uuid>/<instance_uuid>`.
+
+`create_admin_team` is only honored when the view is created. Changing it to `false` does not delete an existing Admin team. Before migration, explicitly choose one of:
+
+- Import the Admin team and its membership as standalone resources.
+- Delete the Admin team manually before migration.
+- Leave the Admin team unmanaged.
+
+Never combine the import and ownership-transition steps in one apply.
+
+## Migrating Standalone Children to Inline
+
+Directly changing `child_management` from `"standalone"` to `"inline"` is rejected because standalone view state does not contain the remote child collection. To migrate without replacing remote objects:
+
+1. Back up state, record the view UUID, and prepare inline blocks describing every remote child.
+2. Remove all standalone child resource addresses from state, then remove the view address. Do not apply while old config remains.
+3. Replace standalone resources with complete inline blocks and set inline mode.
+4. Import the existing view UUID back into the original view address.
+5. Run `terraform plan`; resolve every proposed child create, replace, or delete before applying.
