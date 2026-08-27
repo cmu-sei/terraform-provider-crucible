@@ -6,14 +6,42 @@ package util
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/oauth2"
 )
 
 // Helper functions used throughout provider
+
+const (
+	// HTTPConnectTimeout bounds how long a provider API call can spend opening a
+	// TCP connection.
+	HTTPConnectTimeout = 5 * time.Second
+
+	// HTTPRequestTimeout bounds the complete lifetime of a provider API call,
+	// including connecting, sending the request, and reading the response.
+	HTTPRequestTimeout = 60 * time.Second
+)
+
+// NewHTTPClient returns the client used for all provider API and OAuth calls.
+// Terraform otherwise waits indefinitely when a service accepts a TCP
+// connection but never sends an HTTP response.
+func NewHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{
+		Timeout:   HTTPConnectTimeout,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   HTTPRequestTimeout,
+	}
+}
 
 // As performs a checked type assertion of v to T, returning the zero value of T
 // when v is nil or not a T. It exists so the many decodes of Terraform's
@@ -62,7 +90,11 @@ type passwordTokenSource struct {
 }
 
 func (s passwordTokenSource) Token() (*oauth2.Token, error) {
-	return s.cfg.PasswordCredentialsToken(context.Background(), s.username, s.pass)
+	ctx, cancel := context.WithTimeout(context.Background(), HTTPRequestTimeout)
+	defer cancel()
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, NewHTTPClient())
+
+	return s.cfg.PasswordCredentialsToken(ctx, s.username, s.pass)
 }
 
 // authClients caches one token-backed *http.Client per full-credential+endpoint
@@ -95,7 +127,9 @@ func AuthedHTTPClient(m map[string]string) *http.Client {
 	src := passwordTokenSource{cfg: oauthConfig(m), username: m["username"], pass: m["password"]}
 	// nil seed token => the grant is deferred to the first request and refreshed
 	// automatically on expiry.
-	c := oauth2.NewClient(context.Background(), oauth2.ReuseTokenSource(nil, src))
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, NewHTTPClient())
+	c := oauth2.NewClient(ctx, oauth2.ReuseTokenSource(nil, src))
+	c.Timeout = HTTPRequestTimeout
 	authClients[key] = c
 	return c
 }
