@@ -31,7 +31,14 @@ const (
 // Terraform otherwise waits indefinitely when a service accepts a TCP
 // connection but never sends an HTTP response.
 func NewHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &http.Client{
+			Transport: http.DefaultTransport,
+			Timeout:   HTTPRequestTimeout,
+		}
+	}
+	transport = transport.Clone()
 	transport.DialContext = (&net.Dialer{
 		Timeout:   HTTPConnectTimeout,
 		KeepAlive: 30 * time.Second,
