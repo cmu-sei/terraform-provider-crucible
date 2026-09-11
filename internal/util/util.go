@@ -5,6 +5,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -27,26 +28,77 @@ const (
 	HTTPRequestTimeout = 60 * time.Second
 )
 
+// HTTPTimeouts controls the connection and complete-request bounds used by
+// provider API and OAuth calls. A zero duration disables the corresponding
+// bound.
+type HTTPTimeouts struct {
+	Connect time.Duration
+	Request time.Duration
+}
+
+// ParseTimeout parses a configured timeout, using defaultTimeout when value is
+// empty. Zero is valid and disables the timeout; negative values are rejected.
+func ParseTimeout(value string, defaultTimeout time.Duration) (time.Duration, error) {
+	if value == "" {
+		return defaultTimeout, nil
+	}
+
+	timeout, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("must be a valid duration such as %q or %q: %w", "5s", "2m", err)
+	}
+	if timeout < 0 {
+		return 0, fmt.Errorf("must be zero or greater")
+	}
+	return timeout, nil
+}
+
+// ParseHTTPTimeouts parses provider configuration values, applying the
+// existing defaults when either value is absent.
+func ParseHTTPTimeouts(connect, request string) (HTTPTimeouts, error) {
+	connectTimeout, err := ParseTimeout(connect, HTTPConnectTimeout)
+	if err != nil {
+		return HTTPTimeouts{}, fmt.Errorf("http connect timeout: %w", err)
+	}
+
+	requestTimeout, err := ParseTimeout(request, HTTPRequestTimeout)
+	if err != nil {
+		return HTTPTimeouts{}, fmt.Errorf("http request timeout: %w", err)
+	}
+
+	return HTTPTimeouts{
+		Connect: connectTimeout,
+		Request: requestTimeout,
+	}, nil
+}
+
+// HTTPTimeoutsFromConfig parses timeout values from provider resource data.
+// Missing keys retain the default behavior used by callers that predate
+// configurable timeouts.
+func HTTPTimeoutsFromConfig(m map[string]string) (HTTPTimeouts, error) {
+	return ParseHTTPTimeouts(m["http_connect_timeout"], m["http_request_timeout"])
+}
+
 // NewHTTPClient returns the client used for all provider API and OAuth calls.
 // Terraform otherwise waits indefinitely when a service accepts a TCP
 // connection but never sends an HTTP response.
-func NewHTTPClient() *http.Client {
+func NewHTTPClient(timeouts HTTPTimeouts) *http.Client {
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		return &http.Client{
 			Transport: http.DefaultTransport,
-			Timeout:   HTTPRequestTimeout,
+			Timeout:   timeouts.Request,
 		}
 	}
 	transport = transport.Clone()
 	transport.DialContext = (&net.Dialer{
-		Timeout:   HTTPConnectTimeout,
+		Timeout:   timeouts.Connect,
 		KeepAlive: 30 * time.Second,
 	}).DialContext
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   HTTPRequestTimeout,
+		Timeout:   timeouts.Request,
 	}
 }
 
@@ -94,12 +146,17 @@ func oauthConfig(m map[string]string) *oauth2.Config {
 type passwordTokenSource struct {
 	cfg            *oauth2.Config
 	username, pass string
+	httpTimeouts   HTTPTimeouts
 }
 
 func (s passwordTokenSource) Token() (*oauth2.Token, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), HTTPRequestTimeout)
-	defer cancel()
-	ctx = context.WithValue(ctx, oauth2.HTTPClient, NewHTTPClient())
+	ctx := context.Background()
+	if s.httpTimeouts.Request > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.httpTimeouts.Request)
+		defer cancel()
+	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, NewHTTPClient(s.httpTimeouts))
 
 	return s.cfg.PasswordCredentialsToken(ctx, s.username, s.pass)
 }
@@ -119,26 +176,37 @@ var (
 // source is cached by credentials+endpoints, so repeated calls — including the
 // per-item calls inside the team/user/permission loops — reuse a single token
 // instead of re-running the password grant every time.
-func AuthedHTTPClient(m map[string]string) *http.Client {
+func AuthedHTTPClient(m map[string]string) (*http.Client, error) {
+	httpTimeouts, err := HTTPTimeoutsFromConfig(m)
+	if err != nil {
+		return nil, err
+	}
+
 	key := strings.Join([]string{
 		m["client_id"], m["client_secret"], m["username"], m["password"],
 		m["auth_url"], m["player_token_url"], m["client_scopes"],
+		httpTimeouts.Connect.String(), httpTimeouts.Request.String(),
 	}, "|")
 
 	authClientsMu.Lock()
 	defer authClientsMu.Unlock()
 	if c, ok := authClients[key]; ok {
-		return c
+		return c, nil
 	}
 
-	src := passwordTokenSource{cfg: oauthConfig(m), username: m["username"], pass: m["password"]}
+	src := passwordTokenSource{
+		cfg:          oauthConfig(m),
+		username:     m["username"],
+		pass:         m["password"],
+		httpTimeouts: httpTimeouts,
+	}
 	// nil seed token => the grant is deferred to the first request and refreshed
 	// automatically on expiry.
-	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, NewHTTPClient())
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, NewHTTPClient(httpTimeouts))
 	c := oauth2.NewClient(ctx, oauth2.ReuseTokenSource(nil, src))
-	c.Timeout = HTTPRequestTimeout
+	c.Timeout = httpTimeouts.Request
 	authClients[key] = c
-	return c
+	return c, nil
 }
 
 // PairInList returns true if a given key/value pair exists somewhere in a list of maps.
