@@ -5,10 +5,13 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
+	"github.com/cmu-sei/terraform-provider-crucible/internal/util"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -27,16 +30,18 @@ type crucibleProvider struct {
 
 // crucibleProviderModel maps provider schema data to a Go type.
 type crucibleProviderModel struct {
-	Username     types.String `tfsdk:"username"`
-	Password     types.String `tfsdk:"password"`
-	AuthURL      types.String `tfsdk:"auth_url"`
-	TokenURL     types.String `tfsdk:"token_url"`
-	VMAPIURL     types.String `tfsdk:"vm_api_url"`
-	PlayerAPIURL types.String `tfsdk:"player_api_url"`
-	CasterAPIURL types.String `tfsdk:"caster_api_url"`
-	ClientID     types.String `tfsdk:"client_id"`
-	ClientSecret types.String `tfsdk:"client_secret"`
-	ClientScopes types.List   `tfsdk:"client_scopes"`
+	Username           types.String `tfsdk:"username"`
+	Password           types.String `tfsdk:"password"`
+	AuthURL            types.String `tfsdk:"auth_url"`
+	TokenURL           types.String `tfsdk:"token_url"`
+	VMAPIURL           types.String `tfsdk:"vm_api_url"`
+	PlayerAPIURL       types.String `tfsdk:"player_api_url"`
+	CasterAPIURL       types.String `tfsdk:"caster_api_url"`
+	ClientID           types.String `tfsdk:"client_id"`
+	ClientSecret       types.String `tfsdk:"client_secret"`
+	ClientScopes       types.List   `tfsdk:"client_scopes"`
+	HTTPConnectTimeout types.String `tfsdk:"http_connect_timeout"`
+	HTTPRequestTimeout types.String `tfsdk:"http_request_timeout"`
 }
 
 // New returns a function that creates a new instance of the provider with the
@@ -95,6 +100,14 @@ func (p *crucibleProvider) Schema(_ context.Context, _ provider.SchemaRequest, r
 				Optional:    true,
 				ElementType: types.StringType,
 			},
+			"http_connect_timeout": schema.StringAttribute{
+				Optional:    true,
+				Description: "Maximum time to spend opening an HTTP connection. Supports Go duration syntax; 0s disables the bound. Defaults to 5s.",
+			},
+			"http_request_timeout": schema.StringAttribute{
+				Optional:    true,
+				Description: "Maximum time for an HTTP request, including reading the response. Supports Go duration syntax; 0s disables the bound. Defaults to 60s.",
+			},
 		},
 	}
 }
@@ -120,6 +133,29 @@ func (p *crucibleProvider) Configure(ctx context.Context, req provider.Configure
 	casterAPIURL := resolve(cfg.CasterAPIURL, "SEI_CRUCIBLE_CASTER_API_URL")
 	clientID := resolve(cfg.ClientID, "SEI_CRUCIBLE_CLIENT_ID")
 	clientSecret := resolve(cfg.ClientSecret, "SEI_CRUCIBLE_CLIENT_SECRET")
+	connectTimeoutValue := resolve(cfg.HTTPConnectTimeout, "SEI_CRUCIBLE_HTTP_CONNECT_TIMEOUT")
+	requestTimeoutValue := resolve(cfg.HTTPRequestTimeout, "SEI_CRUCIBLE_HTTP_REQUEST_TIMEOUT")
+
+	connectTimeout, err := util.ParseTimeout(connectTimeoutValue, util.HTTPConnectTimeout)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("http_connect_timeout"),
+			"Invalid HTTP connect timeout",
+			fmt.Sprintf("The configured value %q is invalid: %s", connectTimeoutValue, err),
+		)
+	}
+
+	requestTimeout, err := util.ParseTimeout(requestTimeoutValue, util.HTTPRequestTimeout)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("http_request_timeout"),
+			"Invalid HTTP request timeout",
+			fmt.Sprintf("The configured value %q is invalid: %s", requestTimeoutValue, err),
+		)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	// client_scopes is a list; fall back to the comma/space delimited env var.
 	var scopes string
@@ -135,16 +171,18 @@ func (p *crucibleProvider) Configure(ctx context.Context, req provider.Configure
 	}
 
 	m := map[string]string{
-		"username":         username,
-		"password":         password,
-		"auth_url":         authURL,
-		"player_token_url": tokenURL,
-		"vm_api_url":       vmAPIURL,
-		"player_api_url":   playerAPIURL,
-		"caster_api_url":   casterAPIURL,
-		"client_id":        clientID,
-		"client_secret":    clientSecret,
-		"client_scopes":    scopes,
+		"username":             username,
+		"password":             password,
+		"auth_url":             authURL,
+		"player_token_url":     tokenURL,
+		"vm_api_url":           vmAPIURL,
+		"player_api_url":       playerAPIURL,
+		"caster_api_url":       casterAPIURL,
+		"client_id":            clientID,
+		"client_secret":        clientSecret,
+		"client_scopes":        scopes,
+		"http_connect_timeout": connectTimeout.String(),
+		"http_request_timeout": requestTimeout.String(),
 	}
 
 	// Make the configuration map available to resources and data sources.

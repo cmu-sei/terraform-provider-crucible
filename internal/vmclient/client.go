@@ -24,5 +24,9 @@ func NewAuthed(m map[string]string) (*ClientWithResponses, error) {
 	// util.GetVmApiUrl returns "<root>/api/"; the generated paths add "/api/"
 	// themselves, so strip it to avoid a doubled "/api/api/" path.
 	server := strings.TrimSuffix(util.GetVmApiUrl(m), "/api/")
-	return NewClientWithResponses(server, WithHTTPClient(util.AuthedHTTPClient(m)))
+	httpClient, err := util.AuthedHTTPClient(m)
+	if err != nil {
+		return nil, err
+	}
+	return NewClientWithResponses(server, WithHTTPClient(httpClient))
 }

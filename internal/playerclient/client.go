@@ -23,5 +23,9 @@ import (
 // util.AuthedHTTPClient (shared across all three generated clients).
 func NewAuthed(m map[string]string) (*ClientWithResponses, error) {
 	server := strings.TrimSuffix(util.GetPlayerApiUrl(m), "/api/")
-	return NewClientWithResponses(server, WithHTTPClient(util.AuthedHTTPClient(m)))
+	httpClient, err := util.AuthedHTTPClient(m)
+	if err != nil {
+		return nil, err
+	}
+	return NewClientWithResponses(server, WithHTTPClient(httpClient))
 }
