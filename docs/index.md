@@ -45,6 +45,8 @@ export SEI_CRUCIBLE_CLIENT_SCOPES='["scope1","scope2"]'
 export SEI_CRUCIBLE_VM_API_URL="<the url to the VM API>"
 export SEI_CRUCIBLE_PLAYER_API_URL="<the url to the Player API>"
 export SEI_CRUCIBLE_CASTER_API_URL="<the url to the Caster API>"
+export SEI_CRUCIBLE_HTTP_CONNECT_TIMEOUT="5s"
+export SEI_CRUCIBLE_HTTP_REQUEST_TIMEOUT="60s"
 ```
 
 ### Provider Block
@@ -61,6 +63,8 @@ provider "crucible" {
   vm_api_url     = "<the url to the VM API>"
   player_api_url = "<the url to the Player API>"
   caster_api_url = "<the url to the Caster API>"
+  http_connect_timeout = "5s"
+  http_request_timeout = "60s"
 }
 ```
 
@@ -76,3 +80,5 @@ provider "crucible" {
 - `vm_api_url` - (Required) URL to the VM API. Can be set via `SEI_CRUCIBLE_VM_API_URL`.
 - `player_api_url` - (Required) URL to the Player API. Can be set via `SEI_CRUCIBLE_PLAYER_API_URL`.
 - `caster_api_url` - (Required) URL to the Caster API. Can be set via `SEI_CRUCIBLE_CASTER_API_URL`.
+- `http_connect_timeout` - (Optional) Maximum time to spend opening an HTTP connection. Uses Go duration syntax, such as `5s` or `2m`. Defaults to `5s` and can be set via `SEI_CRUCIBLE_HTTP_CONNECT_TIMEOUT`. Set to `0s` to disable the connection bound.
+- `http_request_timeout` - (Optional) Maximum time for an HTTP request, including reading the response. Uses Go duration syntax, such as `60s` or `2m`. Defaults to `60s` and can be set via `SEI_CRUCIBLE_HTTP_REQUEST_TIMEOUT`. Set to `0s` to disable the request bound.
