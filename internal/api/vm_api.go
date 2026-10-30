@@ -136,7 +136,9 @@ func DeleteVM(id string, m map[string]string) error {
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode() != http.StatusNoContent {
+	// Already gone counts as deleted, so a destroy doesn't need to read the VM
+	// first, which an account without a Vm read permission can't do.
+	if resp.StatusCode() != http.StatusNoContent && resp.StatusCode() != http.StatusNotFound {
 		return fmt.Errorf("request returned with status code %d", resp.StatusCode())
 	}
 	return nil
