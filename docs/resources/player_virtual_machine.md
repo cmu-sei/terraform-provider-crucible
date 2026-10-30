@@ -8,6 +8,8 @@ description: |-
 
 Manages virtual machine resources in Crucible's VM API. VMs can be created, read, updated, and destroyed using Terraform with this provider.
 
+The provider's account needs two kinds of access in Player for every view it places VMs in. Creating, updating, and deleting VMs needs `ManageView` on a team the account belongs to, `ManageTeam` on the VM's teams, or the `ManageViews` system permission. Reading VMs back needs a Vm permission on the view or team, or the `ViewVms` or `ControlVms` system permission. In views that Alloy copies for an event, the account is on no team unless Alloy's `ClonedViewServiceUserIds` setting lists it. When the VM API refuses a read, the error names the permissions the account needs.
+
 ## Example Usage
 
 ```hcl
