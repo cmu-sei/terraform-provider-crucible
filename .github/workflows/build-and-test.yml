@@ -1,0 +1,31 @@
+# Builds the provider and runs its offline Go tests. The acceptance tests
+# (TestAcc*) skip here: they need TF_ACC=1 and a live Crucible stack.
+name: Build and Test
+
+# Pull requests validate proposed changes. Pushes to main verify the result after merge.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Test
+        run: go test ./...
