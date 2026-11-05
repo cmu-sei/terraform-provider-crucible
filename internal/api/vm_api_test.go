@@ -4,6 +4,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -34,6 +35,9 @@ func TestVMExistsFromStatus(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("vmExistsFromStatus(%d) error = nil, want an error", tt.status)
+				}
+				if got := errors.Is(err, ErrVMReadForbidden); got != (tt.status == http.StatusForbidden) {
+					t.Errorf("errors.Is(err, ErrVMReadForbidden) = %v for status %d", got, tt.status)
 				}
 				if !strings.Contains(err.Error(), tt.wantInErr) || !strings.Contains(err.Error(), vmID.String()) {
 					t.Errorf("error %q should contain %q and the VM id", err, tt.wantInErr)

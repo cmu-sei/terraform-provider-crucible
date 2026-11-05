@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -179,6 +180,10 @@ func vmExistsFromStatus(status int, vmID uuid.UUID) (bool, error) {
 	return false, fmt.Errorf("VM API returned status %d checking VM %s", status, vmID)
 }
 
+// ErrVMReadForbidden marks a 403 reading a VM: the account lacks a Vm read
+// permission, though it may still be able to update or delete the VM.
+var ErrVMReadForbidden = errors.New("VM read forbidden")
+
 // vmAccessError names the permissions the VM API wants when it refuses a read.
 // The provider's account is often on no team in the View (Alloy clones Views
 // without it), so only a system-level grant reaches the VM.
@@ -187,7 +192,7 @@ func vmAccessError(status int, vmID uuid.UUID) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("VM API returned status 401 reading VM %s; check the provider's credentials and token", vmID)
 	case http.StatusForbidden:
-		return fmt.Errorf("VM API returned status 403 reading VM %s; the provider's account needs the ViewVms or ControlVms system permission in Player, ViewViewVms or ControlViewVms on a team it belongs to in the view, or ViewTeamVms or ControlTeamVms on one of the VM's teams", vmID)
+		return fmt.Errorf("%w: VM API returned status 403 reading VM %s; the provider's account needs the ViewVms or ControlVms system permission in Player, ViewViewVms or ControlViewVms on a team it belongs to in the view, or ViewTeamVms or ControlTeamVms on one of the VM's teams", ErrVMReadForbidden, vmID)
 	}
 	return nil
 }

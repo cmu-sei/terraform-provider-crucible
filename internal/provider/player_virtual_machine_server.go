@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -281,6 +282,12 @@ func (r *virtualMachineResource) Read(ctx context.Context, req resource.ReadRequ
 	}
 
 	exists, err := api.VMExists(state.ID.ValueString(), r.cfg)
+	if errors.Is(err, api.ErrVMReadForbidden) {
+		// Keep the stored state so a destroy can still reach Delete, which needs
+		// only a manage permission. Create treats the same 403 as an error.
+		resp.Diagnostics.AddWarning("Virtual machine can't be refreshed", err.Error())
+		return
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Error checking virtual machine existence", err.Error())
 		return
