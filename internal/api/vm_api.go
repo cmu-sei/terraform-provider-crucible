@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -71,6 +72,9 @@ func GetVMInfo(id string, m map[string]string) (*structs.VMInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := vmAccessError(resp.StatusCode(), vmID); err != nil {
+		return nil, err
+	}
 	if resp.StatusCode() != http.StatusOK {
 		return nil, fmt.Errorf("request returned with status code %d", resp.StatusCode())
 	}
@@ -133,7 +137,9 @@ func DeleteVM(id string, m map[string]string) error {
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode() != http.StatusNoContent {
+	// Already gone counts as deleted, so a destroy doesn't need to read the VM
+	// first, which an account without a Vm read permission can't do.
+	if resp.StatusCode() != http.StatusNoContent && resp.StatusCode() != http.StatusNotFound {
 		return fmt.Errorf("request returned with status code %d", resp.StatusCode())
 	}
 	return nil
@@ -155,7 +161,40 @@ func VMExists(id string, m map[string]string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return resp.StatusCode() != http.StatusNotFound, nil
+	return vmExistsFromStatus(resp.StatusCode(), vmID)
+}
+
+// vmExistsFromStatus reads a GET vms/{id} status. Only a 404 means the VM is
+// gone. A 401 or 403 is an error rather than "exists", so a missing permission
+// fails the refresh instead of hiding behind a VM that can't be read.
+func vmExistsFromStatus(status int, vmID uuid.UUID) (bool, error) {
+	switch status {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	}
+	if err := vmAccessError(status, vmID); err != nil {
+		return false, err
+	}
+	return false, fmt.Errorf("VM API returned status %d checking VM %s", status, vmID)
+}
+
+// ErrVMReadForbidden marks a 403 reading a VM: the account lacks a Vm read
+// permission, though it may still be able to update or delete the VM.
+var ErrVMReadForbidden = errors.New("VM read forbidden")
+
+// vmAccessError names the permissions the VM API wants when it refuses a read.
+// The provider's account is often on no team in the View (Alloy clones Views
+// without it), so only a system-level grant reaches the VM.
+func vmAccessError(status int, vmID uuid.UUID) error {
+	switch status {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("VM API returned status 401 reading VM %s; check the provider's credentials and token", vmID)
+	case http.StatusForbidden:
+		return fmt.Errorf("%w: VM API returned status 403 reading VM %s; the provider's account needs the ViewVms or ControlVms system permission in Player, ViewViewVms or ControlViewVms on a team it belongs to in the view, or ViewTeamVms or ControlTeamVms on one of the VM's teams", ErrVMReadForbidden, vmID)
+	}
+	return nil
 }
 
 // RemoveVMFromTeams removes the specified VM from the specified teams.

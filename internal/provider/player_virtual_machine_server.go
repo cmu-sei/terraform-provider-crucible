@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -237,12 +238,40 @@ func (r *virtualMachineResource) Create(ctx context.Context, req resource.Create
 
 	plan.ID = types.StringValue(vmID)
 
+	// Persist ownership as soon as the remote VM exists. If the read-back below
+	// fails (a 403 when the account can create but not read Vms), Terraform
+	// keeps the VM as tainted and a destroy still deletes it, instead of
+	// leaving an orphaned VM in the VM API.
+	checkpoint := vmCreateCheckpoint(plan)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &checkpoint)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	resp.Diagnostics.Append(r.read(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+// vmCreateCheckpoint is the plan with the new VM's id, and the computed
+// attributes the API has not reported yet set to null, since state can't hold
+// unknown values.
+func vmCreateCheckpoint(plan vmModel) vmModel {
+	checkpoint := plan
+	checkpoint.VMID = plan.ID
+	if checkpoint.URL.IsUnknown() {
+		checkpoint.URL = types.StringNull()
+	}
+	if checkpoint.DefaultURL.IsUnknown() {
+		checkpoint.DefaultURL = types.BoolNull()
+	}
+	if checkpoint.UserID.IsUnknown() {
+		checkpoint.UserID = types.StringNull()
+	}
+	return checkpoint
 }
 
 func (r *virtualMachineResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -253,6 +282,12 @@ func (r *virtualMachineResource) Read(ctx context.Context, req resource.ReadRequ
 	}
 
 	exists, err := api.VMExists(state.ID.ValueString(), r.cfg)
+	if errors.Is(err, api.ErrVMReadForbidden) {
+		// Keep the stored state so a destroy can still reach Delete, which needs
+		// only a manage permission. Create treats the same 403 as an error.
+		resp.Diagnostics.AddWarning("Virtual machine can't be refreshed", err.Error())
+		return
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Error checking virtual machine existence", err.Error())
 		return
@@ -350,17 +385,7 @@ func (r *virtualMachineResource) Delete(ctx context.Context, req resource.Delete
 		return
 	}
 
-	id := state.ID.ValueString()
-	exists, err := api.VMExists(id, r.cfg)
-	if err != nil {
-		resp.Diagnostics.AddError("Error checking virtual machine existence", err.Error())
-		return
-	}
-	if !exists {
-		return
-	}
-
-	if err := api.DeleteVM(id, r.cfg); err != nil {
+	if err := api.DeleteVM(state.ID.ValueString(), r.cfg); err != nil {
 		resp.Diagnostics.AddError("Error deleting virtual machine", err.Error())
 	}
 }
