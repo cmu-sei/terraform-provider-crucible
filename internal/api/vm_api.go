@@ -187,7 +187,7 @@ func vmAccessError(status int, vmID uuid.UUID) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("VM API returned status 401 reading VM %s; check the provider's credentials and token", vmID)
 	case http.StatusForbidden:
-		return fmt.Errorf("VM API returned status 403 reading VM %s; the provider's account needs the ViewVms or ControlVms system permission in Player, or a Vm permission on one of the VM's teams", vmID)
+		return fmt.Errorf("VM API returned status 403 reading VM %s; the provider's account needs the ViewVms or ControlVms system permission in Player, ViewViewVms or ControlViewVms on a team it belongs to in the view, or ViewTeamVms or ControlTeamVms on one of the VM's teams", vmID)
 	}
 	return nil
 }

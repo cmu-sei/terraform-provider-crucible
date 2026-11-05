@@ -23,7 +23,7 @@ func TestVMExistsFromStatus(t *testing.T) {
 	}{
 		{name: "ok", status: http.StatusOK, wantExists: true},
 		{name: "not found", status: http.StatusNotFound, wantExists: false},
-		{name: "forbidden", status: http.StatusForbidden, wantErr: true, wantInErr: "ViewVms"},
+		{name: "forbidden", status: http.StatusForbidden, wantErr: true, wantInErr: "ViewViewVms or ControlViewVms"},
 		{name: "unauthorized", status: http.StatusUnauthorized, wantErr: true, wantInErr: "credentials"},
 		{name: "server error", status: http.StatusInternalServerError, wantErr: true, wantInErr: "500"},
 	}
