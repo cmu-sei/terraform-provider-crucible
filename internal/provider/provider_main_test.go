@@ -694,6 +694,9 @@ var testEnvDefaults = map[string]string{
 	// NOT reuse the seeded admin GUID here — creating it 500s because it already
 	// exists, and destroying it would remove the seeded admin.)
 	"TF_TEST_USER_ID": "f1a9b2c3-0000-4d5e-8f60-acc7e57e0001",
+	// A second test-only user GUID, created and looked up by name in the
+	// crucible_player_user data source test.
+	"TF_TEST_LOOKUP_USER_ID": "f1a9b2c3-0000-4d5e-8f60-acc7e57e0002",
 	// The user_id stamped on the VM acceptance tests' VMs. Player's VM API stores
 	// user_id free-form (no FK validation against Keycloak), so any fixed UUID
 	// round-trips; a stable value keeps ImportStateVerify deterministic. Override
