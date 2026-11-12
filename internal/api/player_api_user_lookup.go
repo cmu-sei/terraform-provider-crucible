@@ -23,12 +23,13 @@ type PlayerUserFilter struct {
 
 // PlayerUserDirectoryEntry is a Player user as listed by GET /users, with the
 // identity attributes Player holds for it keyed by attribute key. Attributes
-// Player has no value for are omitted.
+// Player has no value for are omitted. RoleID and RoleName are nil when the
+// user has no system role.
 type PlayerUserDirectoryEntry struct {
 	ID                 string
 	Name               string
-	RoleID             string
-	RoleName           string
+	RoleID             *string
+	RoleName           *string
 	IdentityAttributes map[string]string
 }
 
@@ -66,10 +67,13 @@ func matchPlayerUser(entries []playerclient.UserDirectoryEntry, filter PlayerUse
 
 	// Player lists every configured attribute on every user, with a null value
 	// when the user has none, so a key no user carries is not configured or not
-	// visible to this account. Say so rather than report zero matches.
+	// visible to this account. Say so rather than report zero matches. Keys
+	// match exactly: Player treats them as case-sensitive identifiers, so
+	// "Email" and "email" can be two different attributes.
+	listed := listedAttributeKeys(entries)
 	for _, key := range keys {
-		if !attributeKeyListed(entries, key) {
-			return nil, fmt.Errorf("player API returned no identity attribute with key %q; check that the key is configured in Player's ClaimsTransformation:UserAttributes setting and that the provider account has the ViewUsers permission", key)
+		if _, ok := listed[key]; !ok {
+			return nil, unknownAttributeKeyError(key, listed)
 		}
 	}
 
@@ -94,11 +98,12 @@ func matchPlayerUser(entries []playerclient.UserDirectoryEntry, filter PlayerUse
 	out := &PlayerUserDirectoryEntry{
 		ID:                 match.Id.String(),
 		Name:               derefStr(match.Name),
-		RoleName:           derefStr(match.RoleName),
+		RoleName:           match.RoleName,
 		IdentityAttributes: map[string]string{},
 	}
 	if match.RoleId != nil {
-		out.RoleID = match.RoleId.String()
+		roleID := match.RoleId.String()
+		out.RoleID = &roleID
 	}
 	for _, attribute := range identityAttributes(match) {
 		if attribute.Key != nil && attribute.Value != nil {
@@ -108,15 +113,40 @@ func matchPlayerUser(entries []playerclient.UserDirectoryEntry, filter PlayerUse
 	return out, nil
 }
 
-func attributeKeyListed(entries []playerclient.UserDirectoryEntry, key string) bool {
+func listedAttributeKeys(entries []playerclient.UserDirectoryEntry) map[string]struct{} {
+	listed := map[string]struct{}{}
 	for _, entry := range entries {
 		for _, attribute := range identityAttributes(entry) {
-			if attribute.Key != nil && *attribute.Key == key {
-				return true
+			if attribute.Key != nil {
+				listed[*attribute.Key] = struct{}{}
 			}
 		}
 	}
-	return false
+	return listed
+}
+
+// unknownAttributeKeyError names the keys Player did return, so a key that
+// differs only by case, or a key that is not configured, is easy to correct.
+func unknownAttributeKeyError(key string, listed map[string]struct{}) error {
+	if len(listed) == 0 {
+		return fmt.Errorf("player API returned no identity attributes, so key %q cannot be matched; check that Player's ClaimsTransformation:UserAttributes setting configures it and that the provider account has the ViewUsers permission", key)
+	}
+
+	available := make([]string, 0, len(listed))
+	var sameExceptCase []string
+	for candidate := range listed {
+		available = append(available, fmt.Sprintf("%q", candidate))
+		if strings.EqualFold(candidate, key) {
+			sameExceptCase = append(sameExceptCase, fmt.Sprintf("%q", candidate))
+		}
+	}
+	sort.Strings(available)
+	sort.Strings(sameExceptCase)
+
+	if len(sameExceptCase) > 0 {
+		return fmt.Errorf("player API returned no identity attribute with key %q; keys match exactly, and Player has %s", key, strings.Join(sameExceptCase, ", "))
+	}
+	return fmt.Errorf("player API returned no identity attribute with key %q; Player has %s. Check that Player's ClaimsTransformation:UserAttributes setting configures it", key, strings.Join(available, ", "))
 }
 
 func attributesMatch(entry playerclient.UserDirectoryEntry, want map[string]string, caseInsensitive bool) bool {

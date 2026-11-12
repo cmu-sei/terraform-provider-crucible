@@ -73,21 +73,21 @@ func (d *playerUserDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 				Validators:  []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"identity_attributes": schema.MapAttribute{
-				Description: "Identity attribute values to match, keyed by attribute key. Every entry must match.",
+				Description: "Identity attribute values to match, keyed by attribute key. Keys match exactly. Every entry must match.",
 				Optional:    true,
 				ElementType: types.StringType,
 				Validators:  []validator.Map{mapvalidator.SizeAtLeast(1)},
 			},
 			"case_insensitive": schema.BoolAttribute{
-				Description: "Match the name and identity attribute values without regard to case. Defaults to false.",
+				Description: "Match the name and identity attribute values without regard to case. Attribute keys always match exactly. Defaults to false.",
 				Optional:    true,
 			},
 			"role_id": schema.StringAttribute{
-				Description: "UUID of the user's system role, or empty when the user has none.",
+				Description: "UUID of the user's system role, or null when the user has none.",
 				Computed:    true,
 			},
 			"role_name": schema.StringAttribute{
-				Description: "Name of the user's system role, or empty when the user has none.",
+				Description: "Name of the user's system role, or null when the user has none.",
 				Computed:    true,
 			},
 			"attributes": schema.MapAttribute{
@@ -140,8 +140,8 @@ func (d *playerUserDataSource) Read(ctx context.Context, req datasource.ReadRequ
 
 	config.ID = types.StringValue(user.ID)
 	config.Name = types.StringValue(user.Name)
-	config.RoleID = types.StringValue(user.RoleID)
-	config.RoleName = types.StringValue(user.RoleName)
+	config.RoleID = stringValue(user.RoleID)
+	config.RoleName = stringValue(user.RoleName)
 	config.Attributes = attributes
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }

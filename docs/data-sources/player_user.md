@@ -59,13 +59,13 @@ Keys in `identity_attributes` are these `Key` values. Player only returns identi
 Set at least one of `name` or `identity_attributes`.
 
 - `name` - (Optional) User name to match.
-- `identity_attributes` - (Optional) Map of identity attribute values to match, keyed by attribute key. The user must match every entry.
-- `case_insensitive` - (Optional) Match the name and identity attribute values without regard to case. Defaults to `false`.
+- `identity_attributes` - (Optional) Map of identity attribute values to match, keyed by attribute key. Keys match exactly, so `email` does not match a key configured as `Email`. The user must match every entry.
+- `case_insensitive` - (Optional) Match the name and identity attribute values without regard to case. Attribute keys always match exactly. Defaults to `false`.
 
 ## Attributes
 
 - `id` - User UUID.
 - `name` - User name.
-- `role_id` - UUID of the user's system role, or empty when the user has none.
-- `role_name` - Name of the user's system role, or empty when the user has none.
+- `role_id` - UUID of the user's system role, or null when the user has none.
+- `role_name` - Name of the user's system role, or null when the user has none.
 - `attributes` - Map of every identity attribute Player holds a value for on the user, keyed by attribute key.

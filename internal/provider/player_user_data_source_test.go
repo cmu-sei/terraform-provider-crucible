@@ -113,7 +113,7 @@ data "crucible_player_user" "missing" {
   }
 }
 `),
-			ExpectError: regexp.MustCompile(`no identity attribute with key`),
+			ExpectError: regexp.MustCompile(`no identity attribute`),
 		}},
 	})
 }
