@@ -185,8 +185,9 @@ func vmExistsFromStatus(status int, vmID uuid.UUID) (bool, error) {
 var ErrVMReadForbidden = errors.New("VM read forbidden")
 
 // vmAccessError names the permissions the VM API wants when it refuses a read.
-// The provider's account is often on no team in the View (Alloy clones Views
-// without it), so only a system-level grant reaches the VM.
+// A Vm read permission can come from the system, a team the account belongs to
+// in the View, or one of the VM's teams. In a View that Alloy copies, the
+// account is often on no team, so only a system-level grant reaches the VM.
 func vmAccessError(status int, vmID uuid.UUID) error {
 	switch status {
 	case http.StatusUnauthorized:
