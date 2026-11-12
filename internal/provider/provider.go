@@ -222,5 +222,6 @@ func (p *crucibleProvider) DataSources(_ context.Context) []func() datasource.Da
 		NewApplicationTemplateDataSource,
 		NewPlayerRoleDataSource,
 		NewPlayerTeamRoleDataSource,
+		NewPlayerUserDataSource,
 	}
 }

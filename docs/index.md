@@ -8,6 +8,10 @@ description: |-
 
 The Crucible provider enables [Terraform](https://www.terraform.io/) to manage resources within the [Crucible](https://cmu-sei.github.io/crucible/) cybersecurity training and simulation platform, developed by Carnegie Mellon University's Software Engineering Institute (SEI).
 
+## Requirements
+
+The Player resources and data sources require Player API 3.8.0 or later. Against earlier Player versions, in-place updates to application instances fail with a not-found error, and in-place updates to applications are refused unless the provider account has the `ManageApplications` system permission. This affects `crucible_player_application`, `crucible_player_application_instance`, and the applications in `crucible_player_view`.
+
 ## Resources
 
 - [`crucible_player_virtual_machine`](resources/player_virtual_machine.md) — Manage virtual machines in the VM API
@@ -27,6 +31,7 @@ The Crucible provider enables [Terraform](https://www.terraform.io/) to manage r
 - [`crucible_player_application_template`](data-sources/player_application_template.md) — Look up an application template by name in the Player API
 - [`crucible_player_role`](data-sources/player_role.md) — Look up a system role by name in the Player API
 - [`crucible_player_team_role`](data-sources/player_team_role.md) — Look up a team role by name in the Player API
+- [`crucible_player_user`](data-sources/player_user.md) — Look up a user by name or identity attribute in the Player API
 
 ## Authentication
 

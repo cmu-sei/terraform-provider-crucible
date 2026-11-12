@@ -123,11 +123,7 @@ func UpdatePlayerApplication(app *PlayerApplication, m map[string]string) error 
 	if err != nil {
 		return err
 	}
-	viewID, err := uuid.Parse(app.ViewID)
-	if err != nil {
-		return err
-	}
-	body := playerclient.EditApplicationCommand{ViewId: viewID, Name: &app.Name, Url: app.URL, Icon: app.Icon, Embeddable: app.Embeddable, LoadInBackground: app.LoadInBackground}
+	body := playerclient.EditApplicationCommand{Name: &app.Name, Url: app.URL, Icon: app.Icon, Embeddable: app.Embeddable, LoadInBackground: app.LoadInBackground}
 	if app.ApplicationTemplateID != nil {
 		id, err := uuid.Parse(*app.ApplicationTemplateID)
 		if err != nil {
@@ -509,7 +505,7 @@ func UpdatePlayerApplicationInstance(instance *PlayerApplicationInstance, m map[
 		ID:           instance.ID,
 		Parent:       instance.ApplicationID,
 		DisplayOrder: instance.DisplayOrder,
-	}, instance.TeamID, m)
+	}, m)
 }
 
 func DeletePlayerApplicationInstance(id string, m map[string]string) error {
