@@ -121,7 +121,7 @@ func DeleteAppTemplate(id string, m map[string]string) error {
 		return err
 	}
 
-	resp, err := client.DeleteApplicationTemplateWithResponse(context.Background(), tmplID)
+	resp, err := client.DeleteApplicationTemplateWithResponse(context.Background(), tmplID, nil)
 	if err != nil {
 		return err
 	}

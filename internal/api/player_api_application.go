@@ -75,13 +75,7 @@ func UpdateApps(apps *[]*structs.AppInfo, m map[string]string) error {
 		if err != nil {
 			return err
 		}
-		viewID, err := uuid.Parse(app.ViewID)
-		if err != nil {
-			return err
-		}
-
 		body := playerclient.EditApplicationCommand{
-			ViewId:           viewID,
 			Name:             ifaceStrPtr(app.Name),
 			Url:              ifaceStrPtr(app.URL),
 			Icon:             ifaceStrPtr(app.Icon),
@@ -131,17 +125,13 @@ func DeleteApps(ids *[]string, m map[string]string) error {
 }
 
 // UpdateAppInstance updates an application instance.
-func UpdateAppInstance(inst structs.AppInstance, teamID string, m map[string]string) error {
+func UpdateAppInstance(inst structs.AppInstance, m map[string]string) error {
 	client, err := playerclient.NewAuthed(m)
 	if err != nil {
 		return err
 	}
 
 	instID, err := uuid.Parse(inst.ID)
-	if err != nil {
-		return err
-	}
-	tID, err := uuid.Parse(teamID)
 	if err != nil {
 		return err
 	}
@@ -154,7 +144,6 @@ func UpdateAppInstance(inst structs.AppInstance, teamID string, m map[string]str
 	resp, err := client.UpdateApplicationInstanceWithResponse(context.Background(), instID,
 		playerclient.EditApplicationInstanceCommand{
 			ApplicationId: appID,
-			TeamId:        tID,
 			DisplayOrder:  &order,
 		})
 	if err != nil {

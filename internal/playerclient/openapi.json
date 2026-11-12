@@ -531,13 +531,21 @@
           "Application"
         ],
         "summary": "Deletes an Application Template.",
-        "description": "Deletes an Application Template with the specified id.",
+        "description": "Deletes an Application Template with the specified id. If any Application uses the template, the request is refused unless replacementTemplateId names another template, in which case those Applications are moved to it first.",
         "operationId": "deleteApplicationTemplate",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "replacementTemplateId",
+            "in": "query",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -1005,6 +1013,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "includeAllViewFiles",
+            "in": "query",
+            "description": "Whether to include all files in the view instead of applying primary-team visibility.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -3466,7 +3483,7 @@
           "User"
         ],
         "summary": "Gets all Users in the system.",
-        "description": "Returns a list of all of the Users in the system.",
+        "description": "Returns all Users in the system. Includes configured identity attributes for callers with the ViewUsers permission.",
         "operationId": "getUsers",
         "responses": {
           "200": {
@@ -3476,7 +3493,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/User"
+                    "$ref": "#/components/schemas/UserDirectoryEntry"
                   }
                 }
               }
@@ -4372,6 +4389,7 @@
           {
             "name": "MatchRolesByName",
             "in": "query",
+            "description": "Match team roles, and the team permissions assigned directly to teams, by name when no role or\npermission with the exported id exists.",
             "required": true,
             "schema": {
               "type": "boolean"
@@ -5075,14 +5093,14 @@
             "type": "boolean",
             "nullable": true
           },
-          "viewId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "applicationTemplateId": {
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "viewId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "additionalProperties": false
@@ -5094,10 +5112,6 @@
         ],
         "type": "object",
         "properties": {
-          "teamId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "applicationId": {
             "type": "string",
             "format": "uuid"
@@ -5105,6 +5119,10 @@
           "displayOrder": {
             "type": "number",
             "format": "float"
+          },
+          "teamId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "additionalProperties": false
@@ -5282,9 +5300,6 @@
         "additionalProperties": false
       },
       "EditApplicationCommand": {
-        "required": [
-          "viewId"
-        ],
         "type": "object",
         "properties": {
           "name": {
@@ -5308,10 +5323,6 @@
             "type": "boolean",
             "nullable": true
           },
-          "viewId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "applicationTemplateId": {
             "type": "string",
             "format": "uuid",
@@ -5322,15 +5333,10 @@
       },
       "EditApplicationInstanceCommand": {
         "required": [
-          "applicationId",
-          "teamId"
+          "applicationId"
         ],
         "type": "object",
         "properties": {
-          "teamId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "applicationId": {
             "type": "string",
             "format": "uuid"
@@ -6031,7 +6037,6 @@
       "TeamPermission": {
         "enum": [
           "ViewTeam",
-          "EditTeam",
           "ManageTeam"
         ],
         "type": "string"
@@ -6146,6 +6151,54 @@
         },
         "additionalProperties": false
       },
+      "UserDirectoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "roleId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "roleName": {
+            "type": "string",
+            "nullable": true
+          },
+          "identityAttributes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserIdentityAttribute"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserIdentityAttribute": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "value": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "View": {
         "type": "object",
         "properties": {
@@ -6250,7 +6303,6 @@
       "ViewPermission": {
         "enum": [
           "ViewView",
-          "EditView",
           "ManageView"
         ],
         "type": "string"

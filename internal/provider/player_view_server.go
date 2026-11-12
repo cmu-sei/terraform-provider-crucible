@@ -1428,7 +1428,7 @@ func updateInstances(old, current *[]*structs.TeamInfo, apps []interface{}, m ma
 							currInst.Parent = util.As[string](asMap["app_id"])
 						}
 					}
-					if err := api.UpdateAppInstance(currInst, util.As[string](oldTeam.ID), m); err != nil {
+					if err := api.UpdateAppInstance(currInst, m); err != nil {
 						return err
 					}
 				}

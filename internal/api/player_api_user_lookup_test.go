@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/cmu-sei/terraform-provider-crucible/internal/playerclient"
 )
 
 // usersBody mirrors a GET /users response from a Player configured with an
@@ -24,7 +26,7 @@ const usersBody = `[
 ]`
 
 func TestMatchPlayerUser(t *testing.T) {
-	var entries []userDirectoryEntry
+	var entries []playerclient.UserDirectoryEntry
 	if err := json.Unmarshal([]byte(usersBody), &entries); err != nil {
 		t.Fatalf("decode fixture: %v", err)
 	}
@@ -96,7 +98,7 @@ func TestMatchPlayerUser(t *testing.T) {
 }
 
 func TestMatchPlayerUserResult(t *testing.T) {
-	var entries []userDirectoryEntry
+	var entries []playerclient.UserDirectoryEntry
 	if err := json.Unmarshal([]byte(usersBody), &entries); err != nil {
 		t.Fatalf("decode fixture: %v", err)
 	}

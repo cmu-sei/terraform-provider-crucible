@@ -5,7 +5,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -33,20 +32,6 @@ type PlayerUserDirectoryEntry struct {
 	IdentityAttributes map[string]string
 }
 
-// userDirectoryEntry decodes one element of GET /users. The committed
-// playerclient spec types that response as []User, which predates the
-// identityAttributes field, so the body is decoded here instead.
-type userDirectoryEntry struct {
-	playerclient.User
-	IdentityAttributes []userIdentityAttribute `json:"identityAttributes"`
-}
-
-type userIdentityAttribute struct {
-	Key   *string `json:"key"`
-	Name  *string `json:"name"`
-	Value *string `json:"value"`
-}
-
 // FindPlayerUser returns the one Player user that matches the filter.
 //
 // Player only includes identity attributes in GET /users when the caller holds
@@ -65,14 +50,14 @@ func FindPlayerUser(filter PlayerUserFilter, m map[string]string) (*PlayerUserDi
 		return nil, fmt.Errorf("player API returned status %d when listing users", resp.StatusCode())
 	}
 
-	var entries []userDirectoryEntry
-	if err := json.Unmarshal(resp.Body, &entries); err != nil {
-		return nil, fmt.Errorf("decode Player user list: %w", err)
+	var entries []playerclient.UserDirectoryEntry
+	if resp.JSON200 != nil {
+		entries = *resp.JSON200
 	}
 	return matchPlayerUser(entries, filter)
 }
 
-func matchPlayerUser(entries []userDirectoryEntry, filter PlayerUserFilter) (*PlayerUserDirectoryEntry, error) {
+func matchPlayerUser(entries []playerclient.UserDirectoryEntry, filter PlayerUserFilter) (*PlayerUserDirectoryEntry, error) {
 	keys := make([]string, 0, len(filter.IdentityAttributes))
 	for key := range filter.IdentityAttributes {
 		keys = append(keys, key)
@@ -88,7 +73,7 @@ func matchPlayerUser(entries []userDirectoryEntry, filter PlayerUserFilter) (*Pl
 		}
 	}
 
-	var matches []userDirectoryEntry
+	var matches []playerclient.UserDirectoryEntry
 	for _, entry := range entries {
 		if filter.Name != "" && (entry.Name == nil || !namesMatch(*entry.Name, filter.Name, filter.CaseInsensitive)) {
 			continue
@@ -115,7 +100,7 @@ func matchPlayerUser(entries []userDirectoryEntry, filter PlayerUserFilter) (*Pl
 	if match.RoleId != nil {
 		out.RoleID = match.RoleId.String()
 	}
-	for _, attribute := range match.IdentityAttributes {
+	for _, attribute := range identityAttributes(match) {
 		if attribute.Key != nil && attribute.Value != nil {
 			out.IdentityAttributes[*attribute.Key] = *attribute.Value
 		}
@@ -123,9 +108,9 @@ func matchPlayerUser(entries []userDirectoryEntry, filter PlayerUserFilter) (*Pl
 	return out, nil
 }
 
-func attributeKeyListed(entries []userDirectoryEntry, key string) bool {
+func attributeKeyListed(entries []playerclient.UserDirectoryEntry, key string) bool {
 	for _, entry := range entries {
-		for _, attribute := range entry.IdentityAttributes {
+		for _, attribute := range identityAttributes(entry) {
 			if attribute.Key != nil && *attribute.Key == key {
 				return true
 			}
@@ -134,10 +119,10 @@ func attributeKeyListed(entries []userDirectoryEntry, key string) bool {
 	return false
 }
 
-func attributesMatch(entry userDirectoryEntry, want map[string]string, caseInsensitive bool) bool {
+func attributesMatch(entry playerclient.UserDirectoryEntry, want map[string]string, caseInsensitive bool) bool {
 	for key, value := range want {
 		found := false
-		for _, attribute := range entry.IdentityAttributes {
+		for _, attribute := range identityAttributes(entry) {
 			if attribute.Key != nil && *attribute.Key == key &&
 				attribute.Value != nil && namesMatch(*attribute.Value, value, caseInsensitive) {
 				found = true
@@ -149,6 +134,13 @@ func attributesMatch(entry userDirectoryEntry, want map[string]string, caseInsen
 		}
 	}
 	return true
+}
+
+func identityAttributes(entry playerclient.UserDirectoryEntry) []playerclient.UserIdentityAttribute {
+	if entry.IdentityAttributes == nil {
+		return nil
+	}
+	return *entry.IdentityAttributes
 }
 
 func describeUserFilter(filter PlayerUserFilter, sortedKeys []string) string {

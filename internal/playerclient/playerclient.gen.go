@@ -317,14 +317,12 @@ type EditApplicationCommand struct {
 	LoadInBackground      *bool               `json:"loadInBackground,omitempty"`
 	Name                  *string             `json:"name,omitempty"`
 	Url                   *string             `json:"url,omitempty"`
-	ViewId                openapi_types.UUID  `json:"viewId"`
 }
 
 // EditApplicationInstanceCommand defines model for EditApplicationInstanceCommand.
 type EditApplicationInstanceCommand struct {
 	ApplicationId openapi_types.UUID `json:"applicationId"`
 	DisplayOrder  *float32           `json:"displayOrder,omitempty"`
-	TeamId        openapi_types.UUID `json:"teamId"`
 }
 
 // EditApplicationTemplateCommand defines model for EditApplicationTemplateCommand.
@@ -591,6 +589,22 @@ type User struct {
 	RoleName *string             `json:"roleName,omitempty"`
 }
 
+// UserDirectoryEntry defines model for UserDirectoryEntry.
+type UserDirectoryEntry struct {
+	Id                 *openapi_types.UUID      `json:"id,omitempty"`
+	IdentityAttributes *[]UserIdentityAttribute `json:"identityAttributes,omitempty"`
+	Name               *string                  `json:"name,omitempty"`
+	RoleId             *openapi_types.UUID      `json:"roleId,omitempty"`
+	RoleName           *string                  `json:"roleName,omitempty"`
+}
+
+// UserIdentityAttribute defines model for UserIdentityAttribute.
+type UserIdentityAttribute struct {
+	Key   *string `json:"key,omitempty"`
+	Name  *string `json:"name,omitempty"`
+	Value *string `json:"value,omitempty"`
+}
+
 // View defines model for View.
 type View struct {
 	DateCreated   *time.Time          `json:"dateCreated,omitempty"`
@@ -668,6 +682,11 @@ type ImportApplicationTemplatesParams struct {
 	OverWriteExisting bool `form:"OverWriteExisting" json:"OverWriteExisting"`
 }
 
+// DeleteApplicationTemplateParams defines parameters for DeleteApplicationTemplate.
+type DeleteApplicationTemplateParams struct {
+	ReplacementTemplateId *openapi_types.UUID `form:"replacementTemplateId,omitempty" json:"replacementTemplateId,omitempty"`
+}
+
 // UploadMultipleFilesMultipartBody defines parameters for UploadMultipleFiles.
 type UploadMultipleFilesMultipartBody struct {
 	ToUpload *[]openapi_types.File `json:"ToUpload,omitempty"`
@@ -703,7 +722,16 @@ type ImportViewsMultipartBody struct {
 // ImportViewsParams defines parameters for ImportViews.
 type ImportViewsParams struct {
 	MatchApplicationTemplatesByName bool `form:"MatchApplicationTemplatesByName" json:"MatchApplicationTemplatesByName"`
-	MatchRolesByName                bool `form:"MatchRolesByName" json:"MatchRolesByName"`
+
+	// MatchRolesByName Match team roles, and the team permissions assigned directly to teams, by name when no role or
+	// permission with the exported id exists.
+	MatchRolesByName bool `form:"MatchRolesByName" json:"MatchRolesByName"`
+}
+
+// GetViewFilesParams defines parameters for GetViewFiles.
+type GetViewFilesParams struct {
+	// IncludeAllViewFiles Whether to include all files in the view instead of applying primary-team visibility.
+	IncludeAllViewFiles *bool `form:"includeAllViewFiles,omitempty" json:"includeAllViewFiles,omitempty"`
 }
 
 // ApplicationSwitchedParams defines parameters for ApplicationSwitched.
@@ -1050,7 +1078,7 @@ type ClientInterface interface {
 	ImportApplicationTemplatesWithBody(ctx context.Context, params *ImportApplicationTemplatesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteApplicationTemplate request
-	DeleteApplicationTemplate(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteApplicationTemplate(ctx context.Context, id openapi_types.UUID, params *DeleteApplicationTemplateParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetApplicationTemplate request
 	GetApplicationTemplate(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1358,7 +1386,7 @@ type ClientInterface interface {
 	CreateApplication(ctx context.Context, viewId openapi_types.UUID, body CreateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetViewFiles request
-	GetViewFiles(ctx context.Context, viewId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetViewFiles(ctx context.Context, viewId openapi_types.UUID, params *GetViewFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// BroadcastToUserWithBody request with any body
 	BroadcastToUserWithBody(ctx context.Context, viewId openapi_types.UUID, userId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1531,8 +1559,8 @@ func (c *Client) ImportApplicationTemplatesWithBody(ctx context.Context, params 
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteApplicationTemplate(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteApplicationTemplateRequest(c.Server, id)
+func (c *Client) DeleteApplicationTemplate(ctx context.Context, id openapi_types.UUID, params *DeleteApplicationTemplateParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApplicationTemplateRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2851,8 +2879,8 @@ func (c *Client) CreateApplication(ctx context.Context, viewId openapi_types.UUI
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetViewFiles(ctx context.Context, viewId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetViewFilesRequest(c.Server, viewId)
+func (c *Client) GetViewFiles(ctx context.Context, viewId openapi_types.UUID, params *GetViewFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetViewFilesRequest(c.Server, viewId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3412,7 +3440,7 @@ func NewImportApplicationTemplatesRequestWithBody(server string, params *ImportA
 }
 
 // NewDeleteApplicationTemplateRequest generates requests for DeleteApplicationTemplate
-func NewDeleteApplicationTemplateRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+func NewDeleteApplicationTemplateRequest(server string, id openapi_types.UUID, params *DeleteApplicationTemplateParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3435,6 +3463,33 @@ func NewDeleteApplicationTemplateRequest(server string, id openapi_types.UUID) (
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.ReplacementTemplateId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "replacementTemplateId", *params.ReplacementTemplateId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
@@ -6757,7 +6812,7 @@ func NewCreateApplicationRequestWithBody(server string, viewId openapi_types.UUI
 }
 
 // NewGetViewFilesRequest generates requests for GetViewFiles
-func NewGetViewFilesRequest(server string, viewId openapi_types.UUID) (*http.Request, error) {
+func NewGetViewFilesRequest(server string, viewId openapi_types.UUID, params *GetViewFilesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6780,6 +6835,33 @@ func NewGetViewFilesRequest(server string, viewId openapi_types.UUID) (*http.Req
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.IncludeAllViewFiles != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeAllViewFiles", *params.IncludeAllViewFiles, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -7323,7 +7405,7 @@ type ClientWithResponsesInterface interface {
 	ImportApplicationTemplatesWithBodyWithResponse(ctx context.Context, params *ImportApplicationTemplatesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportApplicationTemplatesResponse, error)
 
 	// DeleteApplicationTemplateWithResponse request
-	DeleteApplicationTemplateWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteApplicationTemplateResponse, error)
+	DeleteApplicationTemplateWithResponse(ctx context.Context, id openapi_types.UUID, params *DeleteApplicationTemplateParams, reqEditors ...RequestEditorFn) (*DeleteApplicationTemplateResponse, error)
 
 	// GetApplicationTemplateWithResponse request
 	GetApplicationTemplateWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetApplicationTemplateResponse, error)
@@ -7631,7 +7713,7 @@ type ClientWithResponsesInterface interface {
 	CreateApplicationWithResponse(ctx context.Context, viewId openapi_types.UUID, body CreateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApplicationResponse, error)
 
 	// GetViewFilesWithResponse request
-	GetViewFilesWithResponse(ctx context.Context, viewId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetViewFilesResponse, error)
+	GetViewFilesWithResponse(ctx context.Context, viewId openapi_types.UUID, params *GetViewFilesParams, reqEditors ...RequestEditorFn) (*GetViewFilesResponse, error)
 
 	// BroadcastToUserWithBodyWithResponse request with any body
 	BroadcastToUserWithBodyWithResponse(ctx context.Context, viewId openapi_types.UUID, userId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BroadcastToUserResponse, error)
@@ -9793,7 +9875,7 @@ func (r AddUserToTeamResponse) ContentType() string {
 type GetUsersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]User
+	JSON200      *[]UserDirectoryEntry
 	JSONDefault  *ProblemDetails
 }
 
@@ -11089,8 +11171,8 @@ func (c *ClientWithResponses) ImportApplicationTemplatesWithBodyWithResponse(ctx
 }
 
 // DeleteApplicationTemplateWithResponse request returning *DeleteApplicationTemplateResponse
-func (c *ClientWithResponses) DeleteApplicationTemplateWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteApplicationTemplateResponse, error) {
-	rsp, err := c.DeleteApplicationTemplate(ctx, id, reqEditors...)
+func (c *ClientWithResponses) DeleteApplicationTemplateWithResponse(ctx context.Context, id openapi_types.UUID, params *DeleteApplicationTemplateParams, reqEditors ...RequestEditorFn) (*DeleteApplicationTemplateResponse, error) {
+	rsp, err := c.DeleteApplicationTemplate(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -12057,8 +12139,8 @@ func (c *ClientWithResponses) CreateApplicationWithResponse(ctx context.Context,
 }
 
 // GetViewFilesWithResponse request returning *GetViewFilesResponse
-func (c *ClientWithResponses) GetViewFilesWithResponse(ctx context.Context, viewId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetViewFilesResponse, error) {
-	rsp, err := c.GetViewFiles(ctx, viewId, reqEditors...)
+func (c *ClientWithResponses) GetViewFilesWithResponse(ctx context.Context, viewId openapi_types.UUID, params *GetViewFilesParams, reqEditors ...RequestEditorFn) (*GetViewFilesResponse, error) {
+	rsp, err := c.GetViewFiles(ctx, viewId, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -14353,7 +14435,7 @@ func ParseGetUsersResponse(rsp *http.Response) (*GetUsersResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []User
+		var dest []UserDirectoryEntry
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
